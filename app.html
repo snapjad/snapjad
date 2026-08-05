@@ -640,7 +640,9 @@ async function toggleRec(){
   }catch(e){ status.textContent = "⚠️ ما قدرت أوصل للمايكروفون"; return; }
 
   audioChunks = [];
-  mediaRecorder = new MediaRecorder(mediaStream);
+  const preferredTypes = ["audio/mp4", "audio/aac", "audio/webm;codecs=opus", "audio/webm"];
+  const supportedType = preferredTypes.find(t => window.MediaRecorder?.isTypeSupported?.(t));
+  mediaRecorder = supportedType ? new MediaRecorder(mediaStream, { mimeType: supportedType }) : new MediaRecorder(mediaStream);
   mediaRecorder.ondataavailable = (e)=>{ if(e.data.size>0) audioChunks.push(e.data); };
   mediaRecorder.onstop = onRecordingStopped;
   mediaRecorder.start();
@@ -677,7 +679,9 @@ async function onRecordingStopped(){
   const { data, error } = await sb.functions.invoke("transcribe-meeting", { body: form });
 
   if(error || !data?.transcript){
-    status.textContent = "⚠️ صار خطأ بالتفريغ — جرب مرة ثانية"; return;
+    let detail = error?.message || "";
+    try{ const body = await error?.context?.json(); if(body?.detail || body?.error) detail = (body.error||"") + " " + (body.detail||""); }catch(e){}
+    status.textContent = "⚠️ صار خطأ بالتفريغ: " + detail; return;
   }
 
   const box = document.getElementById("smart-text");
