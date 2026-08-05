@@ -158,6 +158,7 @@ let meetings = [];      // اجتماعاتي (كل وحدة فيها attendees[
 let view = "dash";
 let openMeetingId = null;
 let previewTasks = null;
+let previewSummary = "";
 
 /* ============================================================
    ١) تسجيل الدخول والخروج
@@ -228,6 +229,7 @@ async function loadMeetings(){
     location: m.location,
     date: m.meeting_date,
     preparedBy: m.prepared_by,
+    summary: m.summary,
     attendees: (m.meeting_attendees || []).map(a => a.attendee_name),
     tasks: (m.tasks || []).map(t => ({
       id: t.id,
@@ -446,6 +448,7 @@ function renderDetail(){
       <div><input id="att-input" placeholder="اسم الحاضر" onkeydown="if(event.key==='Enter')addAttendee('${m.id}')"></div>
       <div><button class="btn small" onclick="addAttendee('${m.id}')">إضافة</button></div>
     </div>
+    ${m.summary ? `<div class="sub" style="white-space:pre-wrap;margin-top:14px;line-height:1.7">${esc(m.summary)}</div>` : ""}
   </div>
 
   <div class="card smart">
@@ -503,60 +506,44 @@ async function smartParse(){
   btn.disabled = true;
   out.innerHTML = `<div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span> عم أفصّل النقاط لمهام...</div>`;
 
-  const names = teamProfiles.map(p=>p.full_name).join("، ");
-  const prompt = `أنت مساعد داخل تطبيق إدارة اجتماعات. المستخدم أعطاك نصاً بالعربي (لهجة أردنية أحياناً): إما نقاط مكتوبة، أو تفريغ صوتي كامل لاجتماع فيه نقاش وكلام جانبي. مهمتك تستخرج منه نقاط العمل (action points) فقط وتحولها لمهام منفصلة، وتتجاهل السلام والنقاش الجانبي.
-
-معلومات تساعدك:
-- تاريخ اليوم: ${todayStr()} وهو يوم ${dayName(todayStr())}
-- أسماء الفريق: ${names}
-- أنواع المهام المسموحة: "متابعة" أو "تنفيذ" فقط
-
-قواعد:
-1. كل نقطة عمل مستقلة = مهمة منفصلة
-2. حدد المسؤول من أسماء الفريق إذا مذكور اسمه أو جزء منه. إذا مش واضح خليها أول اسم بالقائمة
-3. حوّل أي موعد نسبي (الخميس، بكرا...) لتاريخ فعلي YYYY-MM-DD بناءً على تاريخ اليوم. إذا ما في موعد خليه null
-4. النوع: متابعة موضوع/تذكير = "متابعة"، شغل ينعمل = "تنفيذ"
-
-أرجع JSON فقط بدون أي كلام إضافي وبدون markdown:
-[{"type":"تنفيذ","desc":"...","owner":"الاسم الكامل من القائمة","due":"2026-08-06","notes":""}]
-
-ملاحظات الاجتماع:
-"""${text}"""`;
+  const names = teamProfiles.map(p=>p.full_name);
 
   try{
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] })
+    const { data, error } = await sb.functions.invoke("smart-parse", {
+      body: { text, teamNames: names, todayStr: todayStr(), dayNameStr: dayName(todayStr()) }
     });
-    const data = await response.json();
-    const raw = (data.content||[]).map(i=>i.text||"").join("");
-    const clean = raw.replace(/```json|```/g,"").trim();
-    previewTasks = JSON.parse(clean);
-    if(!Array.isArray(previewTasks) || previewTasks.length===0) throw new Error("empty");
+    if(error) throw error;
+    if(!data || !Array.isArray(data.tasks) || data.tasks.length===0) throw new Error("empty");
+    previewTasks = data.tasks;
+    previewSummary = data.summary || "";
     renderPreview();
   }catch(err){
-    out.innerHTML = `<div class="sub" style="color:var(--danger);margin-top:10px">صار خطأ بالتحليل — جرب مرة ثانية أو قسّم النقاط أوضح. (هاي الميزة بتحتاج إعداد إضافي على الموقع المرفوع)</div>`;
+    out.innerHTML = `<div class="sub" style="color:var(--danger);margin-top:10px">صار خطأ بالتحليل — جرب مرة ثانية أو قسّم النقاط أوضح.</div>`;
   }
   btn.disabled = false;
 }
 
 function findProfileByName(name){
-  return teamProfiles.find(p=>p.full_name===name) || teamProfiles[0];
+  return teamProfiles.find(p=>p.full_name===name);
 }
 
 function renderPreview(){
   const out = document.getElementById("smart-out");
-  let html = `<div class="sub" style="margin:14px 0 8px">✅ فصّلتلك <b>${previewTasks.length}</b> مهام — راجعها وعدّل اللي بدك ياه ثم أكّد:</div>`;
+  let html = "";
+  if(previewSummary){
+    html += `<div class="card" style="background:var(--primary-soft);margin-top:14px">
+      <label>ملخص الاجتماع</label>
+      <textarea id="preview-summary-input" style="min-height:70px" oninput="previewSummary=this.value">${esc(previewSummary)}</textarea>
+    </div>`;
+  }
+  html += `<div class="sub" style="margin:14px 0 8px">✅ فصّلتلك <b>${previewTasks.length}</b> مهام — راجعها وعدّل اللي بدك ياه ثم أكّد:</div>`;
   previewTasks.forEach((t,i)=>{
-    const owner = findProfileByName(t.owner);
     html += `
     <div class="preview-item">
       <div class="grid c2">
         <div><label>المهمة</label><input value="${esc(t.desc)}" onchange="previewTasks[${i}].desc=this.value"></div>
-        <div><label>المسؤول</label>
-          <select onchange="previewTasks[${i}].owner=this.value">
-            ${teamProfiles.map(p=>`<option ${p.full_name===owner?.full_name?"selected":""}>${esc(p.full_name)}</option>`).join("")}
-          </select>
+        <div><label>المسؤول (اسم حر)</label>
+          <input value="${esc(t.owner||"")}" placeholder="اسم المسؤول" onchange="previewTasks[${i}].owner=this.value">
         </div>
       </div>
       <div class="grid c3">
@@ -581,7 +568,7 @@ async function confirmPreview(){
       task_type: TASK_TYPES.includes(t.type)? t.type : "تنفيذ",
       description: t.desc || "مهمة",
       owner_id: owner?.id || null,
-      owner_name: owner?.full_name || t.owner || "",
+      owner_name: (t.owner || "").trim(),
       due_date: t.due || null,
       notes: t.notes || "",
       is_done: false
@@ -589,7 +576,11 @@ async function confirmPreview(){
   });
   const { error } = await sb.from("tasks").insert(rows);
   if(error){ alert("صار خطأ: " + error.message); }
+  if(previewSummary){
+    await sb.from("meetings").update({ summary: previewSummary }).eq("id", openMeetingId);
+  }
   previewTasks = null;
+  previewSummary = "";
   await loadMeetings();
   render();
 }
@@ -637,44 +628,62 @@ async function deleteTask(btn, taskId){
   render();
 }
 
-/* ---------- 🎙️ التسجيل الصوتي ---------- */
-let recognition = null, recording = false, recFinal = "";
-function toggleRec(){
-  const btn = document.getElementById("rec-btn"), status = document.getElementById("rec-status");
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(!SR){ status.textContent = "⚠️ متصفحك ما بيدعم التحويل الصوتي — جرب كروم"; return; }
+/* ---------- 🎙️ التسجيل الصوتي (تسجيل حقيقي + رفع + تفريغ عبر Munsit) ---------- */
+let mediaRecorder = null, mediaStream = null, recording = false, audioChunks = [];
+async function toggleRec(){
+  const status = document.getElementById("rec-status");
   if(recording){ stopRec(); return; }
-  recognition = new SR();
-  recognition.lang = "ar-JO"; recognition.continuous = true; recognition.interimResults = true;
-  recFinal = document.getElementById("smart-text").value;
-  if(recFinal && !recFinal.endsWith("\n")) recFinal += "\n";
-  recognition.onresult = (event)=>{
-    let interim = "";
-    for(let i = event.resultIndex; i < event.results.length; i++){
-      const r = event.results[i];
-      if(r.isFinal) recFinal += r[0].transcript.trim() + "\n"; else interim += r[0].transcript;
-    }
-    const box = document.getElementById("smart-text");
-    box.value = recFinal + interim; box.scrollTop = box.scrollHeight;
-  };
-  recognition.onend = ()=>{ if(recording){ try{ recognition.start(); }catch(e){} } };
-  recognition.onerror = (e)=>{
-    if(e.error === "not-allowed" || e.error === "service-not-allowed"){
-      stopRec(); status.textContent = "⚠️ ما قدرت أوصل للمايكروفون";
-    }
-  };
+  if(!navigator.mediaDevices?.getUserMedia){ status.textContent = "⚠️ متصفحك ما بيدعم تسجيل الصوت — جرب كروم"; return; }
+
   try{
-    recognition.start(); recording = true;
-    btn.textContent = "⏹️ وقّف التسجيل"; btn.classList.add("on");
-    status.textContent = "🔴 عم أسجل... احكوا طبيعي"; status.classList.add("live");
-  }catch(e){ status.textContent = "⚠️ ما قدرت أشغل التسجيل بهاي البيئة"; }
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  }catch(e){ status.textContent = "⚠️ ما قدرت أوصل للمايكروفون"; return; }
+
+  audioChunks = [];
+  mediaRecorder = new MediaRecorder(mediaStream);
+  mediaRecorder.ondataavailable = (e)=>{ if(e.data.size>0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = onRecordingStopped;
+  mediaRecorder.start();
+  recording = true;
+
+  const btn = document.getElementById("rec-btn");
+  btn.textContent = "⏹️ وقّف التسجيل"; btn.classList.add("on");
+  status.textContent = "🔴 عم أسجل... احكوا طبيعي"; status.classList.add("live");
 }
+
 function stopRec(){
   recording = false;
-  try{ recognition?.stop(); }catch(e){}
-  const btn = document.getElementById("rec-btn"), status = document.getElementById("rec-status");
+  try{ mediaRecorder?.stop(); }catch(e){}
+  try{ mediaStream?.getTracks().forEach(t=>t.stop()); }catch(e){}
+  const btn = document.getElementById("rec-btn");
   if(btn){ btn.textContent = "🎙️ سجّل الاجتماع"; btn.classList.remove("on"); }
-  if(status){ status.textContent = "✔️ وقف التسجيل — راجع النص ثم اكبس فصّلها مهام"; status.classList.remove("live"); }
+}
+
+async function onRecordingStopped(){
+  const status = document.getElementById("rec-status");
+  status.classList.remove("live");
+  status.textContent = "⏳ عم أرفع وأفرّغ الصوت...";
+
+  const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+  const ext = (blob.type.split("/")[1] || "webm").split(";")[0];
+  const path = `${openMeetingId}/${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await sb.storage.from("recordings").upload(path, blob, { contentType: blob.type });
+  if(uploadError){ status.textContent = "⚠️ صار خطأ برفع الصوت: " + uploadError.message; return; }
+  await sb.from("meetings").update({ recording_url: path }).eq("id", openMeetingId);
+
+  const form = new FormData();
+  form.append("file", blob, `recording.${ext}`);
+  const { data, error } = await sb.functions.invoke("transcribe-meeting", { body: form });
+
+  if(error || !data?.transcript){
+    status.textContent = "⚠️ صار خطأ بالتفريغ — جرب مرة ثانية"; return;
+  }
+
+  const box = document.getElementById("smart-text");
+  const prev = box.value.trim();
+  box.value = (prev ? prev + "\n" : "") + data.transcript;
+  status.textContent = "✔️ خلص التفريغ — راجع النص ثم اكبس فصّلها مهام";
 }
 
 /* ============================================================
