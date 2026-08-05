@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SnapJad — اجتماعاتك بتتحول لمهام لحالها</title>
+<meta name="description" content="منصة عربية لإدارة الاجتماعات والمهام: سجّل اجتماعك، والذكاء الاصطناعي بيفصّله مهام بمسؤولين ومواعيد.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --deep:#0E4C56;        /* البترولي الأساسي */
+    --deep-2:#0A3A42;      /* بترولي أغمق للتدرجات */
+    --deep-3:#166273;      /* بترولي أفتح */
+    --coral:#E8552F;       /* المرجاني: أزرار وتفاصيل */
+    --coral-soft:#FDE9E2;
+    --teal-soft:#E1EEEC;
+    --bg:#F7F6F2;          /* عاجي مريح */
+    --card:#FFFFFF;
+    --ink:#17252A;
+    --muted:#5F6F6C;
+    --line:#E6E4DC;
+    --radius:18px;
+    --shadow:0 2px 6px rgba(14,76,86,.06),0 10px 30px rgba(14,76,86,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Tajawal',system-ui,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.7;font-size:16px;
+    overflow-x:hidden;
+  }
+  h1,h2,h3{line-height:1.35}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 20px}
+
+  /* ================= الحركات ================= */
+  .reveal{opacity:0;transform:translateY(28px);transition:opacity .7s ease,transform .7s ease}
+  .reveal.visible{opacity:1;transform:none}
+  .reveal.d1{transition-delay:.1s}.reveal.d2{transition-delay:.22s}.reveal.d3{transition-delay:.34s}
+  .reveal.d4{transition-delay:.46s}.reveal.d5{transition-delay:.58s}
+  @keyframes floaty{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-16px) rotate(4deg)}}
+  @keyframes floaty2{0%,100%{transform:translateY(0)}50%{transform:translateY(12px)}}
+  @keyframes popIn{from{opacity:0;transform:scale(.85) translateY(14px)}to{opacity:1;transform:none}}
+  @keyframes slideDown{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:none}}
+  @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(7px)}}
+  @keyframes shimmer{0%{background-position:200% center}100%{background-position:-200% center}}
+  @media(prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation:none!important;transition:none!important}
+    .reveal{opacity:1;transform:none}
+  }
+
+  /* ================= الناف ================= */
+  .nav{
+    position:sticky;top:0;z-index:50;
+    background:rgba(247,246,242,.9);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);
+    animation:slideDown .6s ease both;
+  }
+  .nav .wrap{display:flex;align-items:center;gap:22px;padding:14px 20px}
+  .brand{font-weight:900;font-size:23px;color:var(--deep);text-decoration:none}
+  .brand span{color:var(--coral)}
+  .nav a.link{color:var(--muted);text-decoration:none;font-size:14.5px;font-weight:700;transition:.15s}
+  .nav a.link:hover{color:var(--deep)}
+  .nav .spacer{flex:1}
+  .btn{
+    display:inline-block;background:var(--coral);color:#fff;text-decoration:none;
+    padding:12px 24px;border-radius:12px;font-weight:800;font-size:15px;
+    transition:transform .18s,box-shadow .18s,filter .18s;border:none;cursor:pointer;font-family:inherit;
+    box-shadow:0 4px 0 rgba(160,50,20,.35);
+  }
+  .btn:hover{transform:translateY(-2px);box-shadow:0 6px 0 rgba(160,50,20,.35);filter:brightness(1.06)}
+  .btn:active{transform:translateY(1px);box-shadow:0 2px 0 rgba(160,50,20,.35)}
+  .btn.deep{background:var(--deep);color:#fff;box-shadow:0 4px 0 rgba(7,40,46,.4)}
+  .btn.light{background:#fff;color:var(--deep);box-shadow:0 4px 0 rgba(7,40,46,.25)}
+  .btn.outline{background:transparent;border:2px solid rgba(255,255,255,.55);color:#fff;box-shadow:none}
+  .btn.big{padding:15px 32px;font-size:17px}
+  @media(max-width:640px){.nav a.link{display:none}}
+
+  /* ================= الهيرو ================= */
+  .hero{
+    background:linear-gradient(165deg,var(--deep-2) 0%,var(--deep) 55%,var(--deep-3) 100%);
+    color:#fff;padding:82px 0 120px;position:relative;overflow:hidden;
+  }
+  .blob{position:absolute;border-radius:50%;pointer-events:none}
+  .blob.b1{width:360px;height:360px;background:rgba(232,85,47,.1);right:-110px;top:-120px;animation:floaty 9s ease-in-out infinite}
+  .blob.b2{width:230px;height:230px;background:rgba(255,255,255,.06);left:-70px;bottom:50px;animation:floaty2 7s ease-in-out infinite}
+  .blob.b3{width:90px;height:90px;background:rgba(232,85,47,.16);left:15%;top:18%;animation:floaty 6s ease-in-out infinite}
+  .blob.b4{width:46px;height:46px;background:rgba(255,255,255,.14);right:20%;bottom:28%;animation:floaty2 5s ease-in-out infinite}
+  .hero .wrap{position:relative;z-index:1;text-align:center}
+  .kicker{
+    display:inline-block;background:rgba(232,85,47,.16);color:#FFB59E;
+    border:1px solid rgba(232,85,47,.4);
+    padding:7px 18px;border-radius:99px;font-size:13.5px;font-weight:800;margin-bottom:20px;
+    animation:popIn .6s .1s ease both;
+  }
+  .hero h1{
+    font-size:clamp(32px,6vw,56px);font-weight:900;margin-bottom:16px;
+    animation:popIn .7s .2s ease both;
+  }
+  .hero h1 .stroke{
+    background:linear-gradient(90deg,#FFB59E 25%,#FF8A64 50%,#FFB59E 75%);
+    background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:shimmer 5s linear infinite;
+  }
+  .hero p.lead{
+    font-size:clamp(16px,2.4vw,19.5px);color:rgba(255,255,255,.85);max-width:640px;margin:0 auto 32px;font-weight:500;
+    animation:popIn .7s .35s ease both;
+  }
+  .hero .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;animation:popIn .7s .5s ease both}
+  .stats{display:flex;gap:40px;justify-content:center;margin-top:48px;flex-wrap:wrap;animation:popIn .7s .65s ease both}
+  .stat b{display:block;font-size:27px;color:#FFB59E;font-weight:900}
+  .stat{font-size:13.5px;color:rgba(255,255,255,.75);font-weight:700}
+  .wave{position:absolute;bottom:-1px;left:0;right:0;line-height:0}
+  .wave svg{width:100%;height:70px;display:block}
+
+  /* ================= أقسام ================= */
+  section{padding:72px 0}
+  .sec-head{text-align:center;max-width:640px;margin:0 auto 46px}
+  .sec-head .tag{
+    display:inline-block;background:var(--coral-soft);color:var(--coral);
+    padding:4px 14px;border-radius:99px;font-weight:800;font-size:13.5px;
+  }
+  .sec-head h2{font-size:clamp(25px,4vw,36px);font-weight:900;margin:12px 0 10px;color:var(--deep)}
+  .sec-head p{color:var(--muted);font-size:15.5px}
+
+  /* ================= المميزات ================= */
+  .feats{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  @media(max-width:860px){.feats{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.feats{grid-template-columns:1fr}}
+  .feat{
+    background:var(--card);border-radius:var(--radius);padding:28px 24px;
+    box-shadow:var(--shadow);transition:transform .25s,box-shadow .25s;
+    border:1.5px solid transparent;
+  }
+  .feat:hover{transform:translateY(-7px);border-color:var(--deep);box-shadow:0 14px 34px rgba(14,76,86,.14)}
+  .feat .ico{
+    width:56px;height:56px;border-radius:16px;background:var(--teal-soft);
+    display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:16px;
+    transition:transform .25s,background .25s;
+  }
+  .feat:hover .ico{transform:rotate(-7deg) scale(1.08);background:var(--coral-soft)}
+  .feat h3{font-size:18px;font-weight:800;margin-bottom:6px;color:var(--deep)}
+  .feat p{color:var(--muted);font-size:14px;line-height:1.75}
+
+  /* ================= كيف بيشتغل ================= */
+  .how{background:var(--deep);position:relative;overflow:hidden}
+  .how .blob.h1{width:300px;height:300px;background:rgba(232,85,47,.09);left:-90px;top:-90px;animation:floaty 10s ease-in-out infinite}
+  .how .blob.h2{width:160px;height:160px;background:rgba(255,255,255,.05);right:-40px;bottom:-40px;animation:floaty2 8s ease-in-out infinite}
+  .how .sec-head h2{color:#fff}
+  .how .sec-head .tag{background:rgba(232,85,47,.18);color:#FFB59E}
+  .how .sec-head p{color:rgba(255,255,255,.65)}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;counter-reset:step;position:relative;z-index:1}
+  @media(max-width:760px){.steps{grid-template-columns:1fr}}
+  .step{
+    position:relative;background:var(--deep-3);border-radius:var(--radius);
+    padding:34px 24px 24px;border:1.5px solid rgba(255,255,255,.14);
+    transition:transform .25s,border-color .25s;
+  }
+  .step:hover{transform:translateY(-6px);border-color:var(--coral)}
+  .step::before{
+    counter-increment:step;content:counter(step);
+    position:absolute;top:-20px;right:24px;width:42px;height:42px;border-radius:50%;
+    background:var(--coral);color:#fff;font-weight:900;font-size:19px;
+    display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 rgba(0,0,0,.28);
+  }
+  .step h3{font-size:17.5px;font-weight:800;margin-bottom:8px;color:#fff}
+  .step p{color:rgba(255,255,255,.7);font-size:14px}
+  .step .demo{
+    margin-top:16px;background:rgba(0,0,0,.22);border-radius:12px;
+    padding:12px 14px;font-size:12.5px;color:rgba(255,255,255,.75);line-height:1.95;
+    border:1px solid rgba(255,255,255,.1);
+  }
+  .step .demo b{color:#FFB59E}
+  .arrow-note{text-align:center;margin-top:30px;color:rgba(255,255,255,.6);font-size:14px;position:relative;z-index:1}
+
+  /* ================= لمين ================= */
+  .who{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  @media(max-width:760px){.who{grid-template-columns:1fr}}
+  .who .card{
+    background:var(--card);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow);
+    transition:transform .25s;border-bottom:4px solid var(--coral);
+  }
+  .who .card:hover{transform:translateY(-6px)}
+  .who .card .emoji{font-size:32px;margin-bottom:10px;display:inline-block;animation:bounce 3s ease-in-out infinite}
+  .who .card:nth-child(2) .emoji{animation-delay:.4s}
+  .who .card:nth-child(3) .emoji{animation-delay:.8s}
+  .who .card h3{font-size:17px;margin-bottom:6px;color:var(--deep);font-weight:800}
+  .who .card p{color:var(--muted);font-size:14px}
+
+  /* ================= دعوة أخيرة ================= */
+  .final{
+    background:linear-gradient(135deg,var(--deep-2),var(--deep-3));
+    border-radius:26px;text-align:center;padding:58px 26px;color:#fff;
+    position:relative;overflow:hidden;
+  }
+  .final .blob.f1{width:240px;height:240px;background:rgba(232,85,47,.12);right:-70px;top:-70px;animation:floaty 8s ease-in-out infinite}
+  .final .blob.f2{width:130px;height:130px;background:rgba(255,255,255,.06);left:-30px;bottom:-30px;animation:floaty2 6s ease-in-out infinite}
+  .final h2{font-size:clamp(23px,3.6vw,34px);font-weight:900;margin-bottom:10px;position:relative;z-index:1}
+  .final p{color:rgba(255,255,255,.82);margin-bottom:28px;position:relative;z-index:1;font-weight:500}
+  .final .btn{position:relative;z-index:1}
+
+  footer{border-top:1px solid var(--line);padding:32px 0;margin-top:72px}
+  footer .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between}
+  footer .muted{color:var(--muted);font-size:13.5px}
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <div class="wrap">
+    <a class="brand" href="#">Snap<span>Jad</span></a>
+    <a class="link" href="#features">المميزات</a>
+    <a class="link" href="#how">كيف بيشتغل</a>
+    <a class="link" href="#who">لمين</a>
+    <span class="spacer"></span>
+    <a class="btn" href="app.html">تسجيل الدخول</a>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div>
+  <div class="wrap">
+    <span class="kicker">✨ مدعوم بالذكاء الاصطناعي</span>
+    <h1>اجتماعاتك بتتحول<br><span class="stroke">لمهام لحالها</span></h1>
+    <p class="lead">سجّل اجتماعك أو الصق ملاحظاتك — و SnapJad بفصّلها مهام واضحة: مين المسؤول، شو المطلوب، وإيمتى التسليم. وكل صباح بتلاقي لوحة يومك جاهزة.</p>
+    <div class="cta">
+      <a class="btn big" href="app.html">جرّب المنصة</a>
+      <a class="btn outline big" href="#how">شوف كيف بيشتغل</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>ثواني</b>من الملاحظات للمهام</div>
+      <div class="stat"><b>مكان واحد</b>لكل محاضر اجتماعاتك</div>
+      <div class="stat"><b>صفر</b>مهمة بتنتسى</div>
+    </div>
+  </div>
+  <div class="wave"><svg viewBox="0 0 1440 70" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><path d="M0,40 C240,80 480,0 720,25 C960,50 1200,10 1440,45 L1440,70 L0,70 Z" fill="#F7F6F2"/></svg></div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="tag">المميزات</div>
+      <h2>كل اللي بتحتاجه لتلحق على شغلك</h2>
+      <p>مبني على طريقة محاضر الاجتماعات الحقيقية — مش قالب أجنبي مترجم</p>
+    </div>
+    <div class="feats">
+      <div class="feat reveal"><div class="ico">✨</div><h3>الإدخال الذكي</h3><p>اكتب أو الصق نقاط الاجتماع زي ما بتحكيها — والذكاء الاصطناعي بفصّلها مهام منفصلة بمسؤول وموعد ونوع.</p></div>
+      <div class="feat reveal d1"><div class="ico">🎙️</div><h3>تسجيل صوتي</h3><p>شغّل المايك بالاجتماع والكلام بينكتب لحظياً — عدّل النص واعتمده مهام بكبسة.</p></div>
+      <div class="feat reveal d2"><div class="ico">📋</div><h3>لوحة اليوم</h3><p>كل المهام من كل الاجتماعات بشاشة وحدة: المتأخر، واليوم، والجاي — بألوان واضحة.</p></div>
+      <div class="feat reveal"><div class="ico">🗓️</div><h3>محاضر اجتماعات مرتبة</h3><p>العنوان، الموقع، الحضور، والمهام — بنفس تنسيق محضر الاجتماع الرسمي اللي متعود عليه.</p></div>
+      <div class="feat reveal d1"><div class="ico">👥</div><h3>مهام موزعة عالفريق</h3><p>كل مهمة عليها اسم صاحبها — وكل واحد من الفريق بيشوف مهامه بحسابه الخاص.</p></div>
+      <div class="feat reveal d2"><div class="ico">⏰</div><h3>مواعيد ما بتفوت</h3><p>"الخميس الجاي" بتتحول لتاريخ حقيقي تلقائياً — والمهمة بتضل قدام عينك لحد ما تخلص.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="how" id="how">
+  <div class="blob h1"></div><div class="blob h2"></div>
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="tag">كيف بيشتغل</div>
+      <h2>من الاجتماع للوحة يومك — بثلاث خطوات</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><h3>سجّل اجتماعك</h3><p>أنشئ الاجتماع، اختار الحضور بكبسة، وسجّل صوتياً أو اكتب النقاط بأي صيغة.</p><div class="demo">«سلام يجهز عرض الأسعار قبل الخميس، وعبدالله يتابع العقد مع المحامي...»</div></div>
+      <div class="step reveal d2"><h3>الذكاء بفصّلها</h3><p>بكبسة وحدة بيقرأ كلامك وبيطلع مهام منظمة — راجعها وعدّل اللي بدك ثم اعتمد.</p><div class="demo"><b>تنفيذ:</b> تجهيز عرض الأسعار — سلام — الخميس<br><b>متابعة:</b> العقد مع المحامي — عبدالله</div></div>
+      <div class="step reveal d4"><h3>تابع من لوحة اليوم</h3><p>كل صباح بتفتح وبتشوف شو عليك اليوم، شو تأخر، وشو جاي — وبتعلّم على المنجز.</p><div class="demo">🔴 متأخرة (١) · 🟡 اليوم (٢) · 🟢 قادمة (٣) · ✅ منجزة</div></div>
+    </div>
+    <div class="arrow-note reveal">وقريباً: اربط أداة تسجيل اجتماعاتك المفضلة والمهام بتنزل لحالها بدون ولا كبسة 🔗</div>
+  </div>
+</section>
+
+<section id="who">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="tag">لمين المنصة</div>
+      <h2>مصممة للي اجتماعاتهم كثيرة ووقتهم قليل</h2>
+    </div>
+    <div class="who">
+      <div class="card reveal"><div class="emoji">💼</div><h3>مدراء الفرق</h3><p>وزّع المهام بالاجتماع وتابع مين خلص ومين تأخر — بدون ما تلاحق حدا بالإيميلات.</p></div>
+      <div class="card reveal d1"><div class="emoji">🤝</div><h3>فرق العمل</h3><p>كل واحد بيعرف شو عليه بالضبط وإيمتى — ما في "أنا فكرت فلان بيعملها".</p></div>
+      <div class="card reveal d2"><div class="emoji">🚀</div><h3>أصحاب المشاريع</h3><p>اجتماعات العملاء والموردين والفريق — كلها محفوظة ومهامها متتبعة بمكان واحد.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="final reveal">
+      <div class="blob f1"></div><div class="blob f2"></div>
+      <h2>جاهز تخلي اجتماعاتك تشتغل عنك؟</h2>
+      <p>ادخل بحساب فريقك وبلش رتّب يومك من أول اجتماع.</p>
+      <a class="btn big" href="app.html">تسجيل الدخول</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#">Snap<span>Jad</span></a>
+    <div class="muted">© 2026 SnapJad — صُنع بالأردن 🇯🇴</div>
+  </div>
+</footer>
+
+<script>
+/* الظهور التدريجي مع النزول */
+const observer = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      e.target.classList.add("visible");
+      observer.unobserve(e.target);
+    }
+  });
+},{threshold:.15});
+document.querySelectorAll(".reveal").forEach(el=>observer.observe(el));
+</script>
+</body>
+</html>
