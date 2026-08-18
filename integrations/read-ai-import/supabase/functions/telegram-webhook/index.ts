@@ -33,7 +33,7 @@ async function transcribeVoice(fileId: string): Promise<string | null> {
   const audioBlob = await audioRes.blob();
 
   const form = new FormData();
-  form.append("file", audioBlob, "voice.oga");
+  form.append("file", audioBlob, "voice.ogg");
   form.append("model", "munsit");
 
   const munsitRes = await fetch("https://api.munsit.com/api/v1/minutes-of-meeting/transcribe", {
