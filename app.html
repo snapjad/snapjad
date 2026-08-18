@@ -101,6 +101,24 @@
   @keyframes recpulse{0%,100%{box-shadow:0 0 0 0 rgba(196,72,60,.45)}50%{box-shadow:0 0 0 10px rgba(196,72,60,0)}}
   .rec-status{font-size:13px;color:var(--muted)}
   .rec-status.live{color:var(--danger);font-weight:700}
+
+  /* ===== الرئيسية بعد الدخول ===== */
+  @keyframes hubIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  .hub-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:760px){.hub-grid{grid-template-columns:1fr}}
+  .hub-card{
+    background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+    padding:26px 22px;cursor:pointer;border:1.5px solid transparent;text-align:right;
+    transition:transform .2s,box-shadow .2s,border-color .2s;
+    animation:hubIn .5s ease both;
+  }
+  .hub-card:nth-child(2){animation-delay:.08s}
+  .hub-card:nth-child(3){animation-delay:.16s}
+  .hub-card:hover{transform:translateY(-5px);border-color:var(--primary);box-shadow:0 14px 30px rgba(14,76,86,.14)}
+  .hub-card .ico{font-size:34px;margin-bottom:14px;display:inline-block;transition:transform .25s}
+  .hub-card:hover .ico{transform:scale(1.12) rotate(-4deg)}
+  .hub-card h3{font-size:17px;font-weight:800;margin-bottom:6px;color:var(--primary)}
+  .hub-card p{color:var(--muted);font-size:13.5px;line-height:1.7}
   footer{position:fixed;bottom:0;right:0;left:0;text-align:center;padding:8px;font-size:11.5px;color:var(--muted);background:var(--bg);border-top:1px solid var(--line)}
 
   /* ===== شاشة تسجيل الدخول ===== */
@@ -138,7 +156,8 @@
   <header>
     <a href="index.html" style="text-decoration:none;color:inherit"><div class="logo">SnapJad<small>مساعدك بالشغل</small></div></a>
     <nav>
-      <button id="nav-dash" class="active" onclick="go('dash')">📋 لوحة اليوم</button>
+      <button id="nav-hub" class="active" onclick="go('hub')">🏠 الرئيسية</button>
+      <button id="nav-dash" onclick="go('dash')">📋 لوحة اليوم</button>
       <button id="nav-meet" onclick="go('meet')">🗓️ الاجتماعات</button>
       <button id="nav-daily" onclick="go('daily')">⚡ مهامي اليومية</button>
       <span class="who" id="who-label"></span>
@@ -163,10 +182,11 @@ let me = null;          // {id, full_name} — المستخدم الحالي
 let teamProfiles = [];  // كل أسماء الفريق [{id, full_name}]
 let meetings = [];      // اجتماعاتي (كل وحدة فيها attendees[] و tasks[])
 let dailyTasks = [];    // مهام سريعة مش تابعة لأي اجتماع
-let view = "dash";
+let view = "hub";
 let openMeetingId = null;
 let previewTasks = null;
 let previewSummary = "";
+const requestedView = new URLSearchParams(location.search).get("view");
 
 /* ============================================================
    ١) تسجيل الدخول والخروج
@@ -213,7 +233,8 @@ async function afterLogin(){
   document.getElementById("who-label").textContent = "👋 " + (me.full_name || "");
 
   await loadMeetings();
-  render();
+  if(["dash","meet","daily"].includes(requestedView)) await go(requestedView);
+  else render();
 }
 
 /* أول ما تفتح الصفحة: هل في جلسة دخول محفوظة أصلاً؟ */
@@ -298,6 +319,7 @@ function allTasks(){
 async function go(v, meetingId){
   if(recording) stopRec();
   view = v; openMeetingId = meetingId ?? null; previewTasks = null;
+  document.getElementById("nav-hub").classList.toggle("active", v==="hub");
   document.getElementById("nav-dash").classList.toggle("active", v==="dash");
   document.getElementById("nav-meet").classList.toggle("active", v==="meet"||v==="detail");
   document.getElementById("nav-daily").classList.toggle("active", v==="daily");
@@ -864,10 +886,21 @@ function renderDaily(){
    ============================================================ */
 function render(){
   const app = document.getElementById("app");
-  if(view==="dash") app.innerHTML = renderDash();
+  if(view==="hub") app.innerHTML = renderHub();
+  else if(view==="dash") app.innerHTML = renderDash();
   else if(view==="meet") app.innerHTML = renderMeetings();
   else if(view==="daily") app.innerHTML = renderDaily();
   else app.innerHTML = renderDetail();
+}
+
+function renderHub(){
+  return `
+  <div class="hero"><div class="date">${fmtDate(todayStr())}</div><h1>أهلاً ${esc((me?.full_name||"").split(" ")[0]||"")} 👋</h1><div class="summary">وين بدك تبلش؟</div></div>
+  <div class="hub-grid">
+    <div class="hub-card" onclick="go('dash')"><div class="ico">📋</div><h3>لوحة اليوم</h3><p>كل مهام اجتماعاتك بمكان واحد — المتأخر، اليوم، والجاي.</p></div>
+    <div class="hub-card" onclick="go('meet')"><div class="ico">🗓️</div><h3>الاجتماعات</h3><p>أنشئ اجتماع، سجّله صوتياً، وفصّل نقاطه لمهام تلقائياً.</p></div>
+    <div class="hub-card" onclick="go('daily')"><div class="ico">⚡</div><h3>مهامي اليومية</h3><p>مهام شخصية سريعة — كتابة أو صوت، بدون أي ارتباط باجتماع.</p></div>
+  </div>`;
 }
 
 checkSession();
