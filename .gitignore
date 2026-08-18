@@ -3,3 +3,4 @@ integrations/read-ai-import/tools/
 integrations/read-ai-import/supabase/.temp/
 integrations/read-ai-import/*.json
 integrations/read-ai-import/*.m4a
+integrations/read-ai-import/*.sql

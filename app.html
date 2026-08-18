@@ -134,6 +134,7 @@
     <nav>
       <button id="nav-dash" class="active" onclick="go('dash')">📋 لوحة اليوم</button>
       <button id="nav-meet" onclick="go('meet')">🗓️ الاجتماعات</button>
+      <button id="nav-daily" onclick="go('daily')">⚡ مهامي اليومية</button>
       <span class="who" id="who-label"></span>
       <button onclick="doLogout()">🚪 خروج</button>
     </nav>
@@ -155,6 +156,7 @@ const TASK_TYPES = ["متابعة","تنفيذ"];
 let me = null;          // {id, full_name} — المستخدم الحالي
 let teamProfiles = [];  // كل أسماء الفريق [{id, full_name}]
 let meetings = [];      // اجتماعاتي (كل وحدة فيها attendees[] و tasks[])
+let dailyTasks = [];    // مهام سريعة مش تابعة لأي اجتماع
 let view = "dash";
 let openMeetingId = null;
 let previewTasks = null;
@@ -242,6 +244,20 @@ async function loadMeetings(){
       done: t.is_done
     }))
   }));
+
+}
+
+async function loadDailyTasks(){
+  const { data, error } = await sb
+    .from("daily_tasks").select("*").order("due_date", { ascending: true, nullsFirst: false });
+  if(error){ console.error(error); dailyTasks = []; return; }
+  dailyTasks = (data || []).map(t => ({
+    id: t.id,
+    desc: t.description,
+    due: t.due_date,
+    notes: t.notes,
+    done: t.is_done
+  }));
 }
 
 /* ============================================================
@@ -273,11 +289,13 @@ function allTasks(){
 /* ============================================================
    ٤) التنقل
    ============================================================ */
-function go(v, meetingId){
+async function go(v, meetingId){
   if(recording) stopRec();
   view = v; openMeetingId = meetingId ?? null; previewTasks = null;
   document.getElementById("nav-dash").classList.toggle("active", v==="dash");
-  document.getElementById("nav-meet").classList.toggle("active", v!=="dash");
+  document.getElementById("nav-meet").classList.toggle("active", v==="meet"||v==="detail");
+  document.getElementById("nav-daily").classList.toggle("active", v==="daily");
+  if(v==="daily") await loadDailyTasks();
   render();
   window.scrollTo(0,0);
 }
@@ -690,6 +708,151 @@ async function onRecordingStopped(){
   status.textContent = "✔️ خلص التفريغ — راجع النص ثم اكبس فصّلها مهام";
 }
 
+/* ---------- ⚡ مهامي اليومية: خدمة شخصية مستقلة تماماً عن الاجتماعات ---------- */
+async function quickAddTask(){
+  const input = document.getElementById("quick-task-input");
+  const text = input.value.trim();
+  if(!text){ flagInput("quick-task-input"); return; }
+  input.disabled = true;
+  const { error } = await sb.from("daily_tasks").insert({
+    description: text,
+    due_date: todayStr(),
+    is_done: false
+  });
+  input.disabled = false;
+  if(error){ alert("صار خطأ: " + error.message); return; }
+  input.value = "";
+  await loadDailyTasks();
+  render();
+}
+
+let quickMediaRecorder = null, quickMediaStream = null, quickRecording = false, quickAudioChunks = [];
+async function toggleQuickRec(){
+  const status = document.getElementById("quick-rec-status");
+  if(quickRecording){ stopQuickRec(); return; }
+  if(!navigator.mediaDevices?.getUserMedia){ status.textContent = "⚠️ متصفحك ما بيدعم تسجيل الصوت"; return; }
+
+  try{ quickMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch(e){ status.textContent = "⚠️ ما قدرت أوصل للمايكروفون"; return; }
+
+  quickAudioChunks = [];
+  const preferredTypes = ["audio/mp4", "audio/aac", "audio/webm;codecs=opus", "audio/webm"];
+  const supportedType = preferredTypes.find(t => window.MediaRecorder?.isTypeSupported?.(t));
+  quickMediaRecorder = supportedType ? new MediaRecorder(quickMediaStream, { mimeType: supportedType }) : new MediaRecorder(quickMediaStream);
+  quickMediaRecorder.ondataavailable = (e)=>{ if(e.data.size>0) quickAudioChunks.push(e.data); };
+  quickMediaRecorder.onstop = onQuickRecordingStopped;
+  quickMediaRecorder.start();
+  quickRecording = true;
+
+  const btn = document.getElementById("quick-rec-btn");
+  btn.classList.add("on"); btn.textContent = "⏹️";
+  status.textContent = "🔴 عم أسجل..."; status.classList.add("live");
+}
+
+function stopQuickRec(){
+  quickRecording = false;
+  try{ quickMediaRecorder?.stop(); }catch(e){}
+  try{ quickMediaStream?.getTracks().forEach(t=>t.stop()); }catch(e){}
+  const btn = document.getElementById("quick-rec-btn");
+  if(btn){ btn.classList.remove("on"); btn.textContent = "🎙️"; }
+}
+
+async function onQuickRecordingStopped(){
+  const status = document.getElementById("quick-rec-status");
+  if(!status) return;
+  status.classList.remove("live");
+  status.textContent = "⏳ عم أفرّغ وأحلل الصوت...";
+
+  const blob = new Blob(quickAudioChunks, { type: quickMediaRecorder.mimeType || "audio/webm" });
+  const ext = (blob.type.split("/")[1] || "webm").split(";")[0];
+  const path = `daily/${me.id}/${Date.now()}.${ext}`;
+  await sb.storage.from("recordings").upload(path, blob, { contentType: blob.type });
+
+  const form = new FormData();
+  form.append("file", blob, `recording.${ext}`);
+  const { data: transcribed, error: transcribeErr } = await sb.functions.invoke("transcribe-meeting", { body: form });
+  if(transcribeErr || !transcribed?.transcript){ status.textContent = "⚠️ صار خطأ بالتفريغ — جرب مرة ثانية"; return; }
+
+  const { data: parsed, error: parseErr } = await sb.functions.invoke("smart-parse", {
+    body: { text: transcribed.transcript, teamNames: [], todayStr: todayStr(), dayNameStr: dayName(todayStr()) }
+  });
+  if(parseErr || !Array.isArray(parsed?.tasks) || parsed.tasks.length===0){
+    status.textContent = "⚠️ ما قدرت أفهم مهمة واضحة — جرب تحكي أوضح"; return;
+  }
+
+  const rows = parsed.tasks.map(t=>({
+    description: t.desc || "مهمة",
+    due_date: t.due || todayStr(),
+    notes: t.notes || "",
+    is_done: false
+  }));
+  const { error: insertErr } = await sb.from("daily_tasks").insert(rows);
+  if(insertErr){ status.textContent = "⚠️ صار خطأ بالإضافة: " + insertErr.message; return; }
+
+  status.textContent = `✔️ ضفت ${rows.length} مهمة`;
+  await loadDailyTasks();
+  render();
+}
+
+async function toggleDailyTask(taskId, isDone){
+  const { error } = await sb.from("daily_tasks").update({ is_done: isDone }).eq("id", taskId);
+  if(error){ alert("صار خطأ: " + error.message); }
+  await loadDailyTasks();
+  render();
+}
+async function deleteDailyTask(btn, taskId){
+  if(btn.dataset.armed !== "1"){
+    btn.dataset.armed = "1"; btn.textContent = "متأكد؟";
+    setTimeout(()=>{ btn.dataset.armed = "0"; btn.textContent = "حذف"; }, 2500);
+    return;
+  }
+  await sb.from("daily_tasks").delete().eq("id", taskId);
+  await loadDailyTasks();
+  render();
+}
+
+function renderDaily(){
+  let html = `
+  <div class="card">
+    <h2>⚡ مهامي اليومية</h2>
+    <div class="sub">خاصة فيك بس — مش مرتبطة بأي اجتماع</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+      <input id="quick-task-input" placeholder="أضف مهمة بسرعة... (اكتب أو سجّل صوت)" style="flex:1;min-width:180px" onkeydown="if(event.key==='Enter')quickAddTask()">
+      <button class="btn rec" id="quick-rec-btn" onclick="toggleQuickRec()">🎙️</button>
+      <button class="btn" onclick="quickAddTask()">إضافة</button>
+    </div>
+    <span class="rec-status" id="quick-rec-status"></span>
+  </div>`;
+
+  if(dailyTasks.length===0){
+    html += `<div class="card"><div class="empty">ما في مهام يومية لسا — ضيف وحدة من فوق</div></div>`;
+    return html;
+  }
+
+  const groups = {late:[], today:[], up:[], done:[]};
+  dailyTasks.forEach(t => groups[taskStatus(t)].push(t));
+  groups.late.sort((a,b)=>(a.due||"").localeCompare(b.due||""));
+  groups.up.sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
+
+  html += `<div class="card">`;
+  [["late","🔴"],["today","🟡"],["up","🟢"],["done","✅"]].forEach(([key,icon])=>{
+    if(groups[key].length===0) return;
+    html += `<div class="group-title">${icon} ${STATUS_LABEL[key]} <span class="count">${groups[key].length}</span></div>`;
+    groups[key].forEach(t => html += `
+      <div class="task ${t.done?"done":""}">
+        <input type="checkbox" ${t.done?"checked":""} onchange="toggleDailyTask('${t.id}', this.checked)">
+        <div class="body">
+          <div class="title">${esc(t.desc)}</div>
+          <div class="meta"><span class="badge ${taskStatus(t)}">📅 ${fmtDate(t.due)}</span></div>
+          ${t.notes? `<div class="notes">📝 ${esc(t.notes)}</div>`:""}
+        </div>
+        <button class="btn danger small" onclick="deleteDailyTask(this,'${t.id}')">حذف</button>
+      </div>`);
+  });
+  html += `</div>`;
+  return html;
+}
+
 /* ============================================================
    ٨) التشغيل
    ============================================================ */
@@ -697,6 +860,7 @@ function render(){
   const app = document.getElementById("app");
   if(view==="dash") app.innerHTML = renderDash();
   else if(view==="meet") app.innerHTML = renderMeetings();
+  else if(view==="daily") app.innerHTML = renderDaily();
   else app.innerHTML = renderDetail();
 }
 
