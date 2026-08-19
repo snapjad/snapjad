@@ -199,7 +199,9 @@
    ============================================================ */
 const SUPABASE_URL = "https://brirttlxldoozcqqtttg.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_31tK2sbLbGZXNdLgM8jbJg_HfGV3MpL";
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: window.localStorage }
+});
 
 const TASK_TYPES = ["متابعة","تنفيذ"];
 

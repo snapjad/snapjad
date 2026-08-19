@@ -1,7 +1,7 @@
 {
   "name": "SnapJad",
   "short_name": "SnapJad",
-  "start_url": "/app.html",
+  "start_url": "/app.html?view=daily",
   "scope": "/",
   "display": "standalone",
   "background_color": "#F7F6F2",
