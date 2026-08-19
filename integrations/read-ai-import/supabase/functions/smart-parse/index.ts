@@ -1,13 +1,22 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 export default {
   fetch: withSupabase({ auth: ["publishable"] }, async (req, _ctx) => {
     if (req.method !== "POST") {
       return Response.json({ error: "POST only" }, { status: 405 });
     }
+
+    // لازم مستخدم حقيقي مسجّل دخول — مو بس المفتاح العام — حتى ما حدا يستنزف رصيد Claude/Munsit مجاناً
+    const jwt = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data: { user } } = await authClient.auth.getUser(jwt);
+    if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
 
     const { text, teamNames, todayStr, dayNameStr } = await req.json();
     if (!text || !Array.isArray(teamNames)) {
