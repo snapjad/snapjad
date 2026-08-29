@@ -424,6 +424,18 @@ if(matchMedia("(hover:hover)").matches){
     btn.addEventListener("mouseleave", ()=>{ btn.style.transform = ""; });
   });
 }
+
+/* تسجيل زيارة الصفحة (بدون تسجيل دخول، بدون أي بيانات شخصية) */
+fetch("https://brirttlxldoozcqqtttg.supabase.co/rest/v1/page_views", {
+  method: "POST",
+  headers: {
+    "apikey": "sb_publishable_31tK2sbLbGZXNdLgM8jbJg_HfGV3MpL",
+    "Authorization": "Bearer sb_publishable_31tK2sbLbGZXNdLgM8jbJg_HfGV3MpL",
+    "Content-Type": "application/json",
+    "Prefer": "return=minimal"
+  },
+  body: JSON.stringify({ path: location.pathname, referrer: document.referrer || null })
+}).catch(()=>{});
 </script>
 </body>
 </html>

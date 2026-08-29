@@ -121,6 +121,20 @@
   .hub-card p{color:var(--muted);font-size:13.5px;line-height:1.7}
   footer{position:fixed;bottom:0;right:0;left:0;text-align:center;padding:8px;font-size:11.5px;color:var(--muted);background:var(--bg);border-top:1px solid var(--line)}
 
+  /* ===== الإحصائيات ===== */
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+  @media(max-width:760px){.stat-grid{grid-template-columns:repeat(2,1fr)}}
+  .stat-tile{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;text-align:center}
+  .stat-tile b{display:block;font-size:28px;font-weight:900;color:var(--primary)}
+  .stat-tile span{font-size:12.5px;color:var(--muted)}
+  .bars{display:flex;align-items:flex-end;gap:8px;height:110px;margin-top:10px}
+  .bars .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+  .bars .bar{width:100%;background:var(--primary);border-radius:6px 6px 0 0;min-height:3px;transition:height .4s ease}
+  .bars .bar-label{font-size:11px;color:var(--muted);margin-top:6px}
+  .toplist-row{display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px}
+  .toplist-row:last-child{border-bottom:none}
+  .toplist-row b{color:var(--primary)}
+
   /* ===== شاشة تسجيل الدخول ===== */
   @keyframes loginAurora1{0%,100%{transform:translate(-8%,-6%) scale(1)}50%{transform:translate(8%,10%) scale(1.2)}}
   @keyframes loginAurora2{0%,100%{transform:translate(6%,4%) scale(1.05)}50%{transform:translate(-10%,-10%) scale(1)}}
@@ -185,6 +199,7 @@
       <button id="nav-dash" onclick="go('dash')">📋 لوحة اليوم</button>
       <button id="nav-meet" onclick="go('meet')">🗓️ الاجتماعات</button>
       <button id="nav-daily" onclick="go('daily')">⚡ مهامي اليومية</button>
+      <button id="nav-stats" onclick="go('stats')" style="display:none">📊 إحصائيات</button>
       <span class="who" id="who-label"></span>
       <button onclick="doLogout()">🚪 خروج</button>
     </nav>
@@ -248,7 +263,7 @@ async function afterLogin(){
   if(!user){ return; }
 
   /* نجيب ملفي الشخصي */
-  const { data: myProfile } = await sb.from("profiles").select("id, full_name").eq("id", user.id).single();
+  const { data: myProfile } = await sb.from("profiles").select("id, full_name, is_admin").eq("id", user.id).single();
   me = myProfile || { id: user.id, full_name: user.email };
 
   /* نجيب أسماء كل الفريق (للقوائم المنسدلة) */
@@ -258,9 +273,10 @@ async function afterLogin(){
   document.getElementById("login-screen").style.display = "none";
   document.getElementById("app-shell").style.display = "block";
   document.getElementById("who-label").textContent = "👋 " + (me.full_name || "");
+  if(me.is_admin) document.getElementById("nav-stats").style.display = "";
 
   await loadMeetings();
-  if(["dash","meet","daily"].includes(requestedView)) await go(requestedView);
+  if(["dash","meet","daily","stats"].includes(requestedView)) await go(requestedView);
   else render();
 }
 
@@ -350,7 +366,9 @@ async function go(v, meetingId){
   document.getElementById("nav-dash").classList.toggle("active", v==="dash");
   document.getElementById("nav-meet").classList.toggle("active", v==="meet"||v==="detail");
   document.getElementById("nav-daily").classList.toggle("active", v==="daily");
+  document.getElementById("nav-stats").classList.toggle("active", v==="stats");
   if(v==="daily") await loadDailyTasks();
+  if(v==="stats") await loadStats();
   render();
   window.scrollTo(0,0);
 }
@@ -911,12 +929,103 @@ function renderDaily(){
 /* ============================================================
    ٨) التشغيل
    ============================================================ */
+/* ============================================================
+   ٩) الإحصائيات (أدمن فقط)
+   ============================================================ */
+let pageStats = null;
+async function loadStats(){
+  const since = new Date(Date.now() - 30*24*60*60*1000).toISOString();
+  const { data, error } = await sb.from("page_views").select("path, referrer, created_at").gte("created_at", since).order("created_at", { ascending: false });
+  if(error){ console.error(error); pageStats = { error: error.message }; return; }
+
+  const rows = data || [];
+  const today = todayStr();
+  const byDay = {};
+  const byPath = {};
+  const byRef = {};
+  rows.forEach(r=>{
+    const day = r.created_at.slice(0,10);
+    byDay[day] = (byDay[day]||0) + 1;
+    byPath[r.path] = (byPath[r.path]||0) + 1;
+    const ref = r.referrer ? (()=>{ try{ return new URL(r.referrer).hostname; }catch(e){ return r.referrer; } })() : "مباشر";
+    byRef[ref] = (byRef[ref]||0) + 1;
+  });
+
+  const last7 = [];
+  for(let i=6;i>=0;i--){
+    const d = new Date(Date.now() - i*24*60*60*1000).toISOString().slice(0,10);
+    last7.push({ day: d, count: byDay[d]||0 });
+  }
+
+  pageStats = {
+    total30d: rows.length,
+    today: byDay[today]||0,
+    last7,
+    topPaths: Object.entries(byPath).sort((a,b)=>b[1]-a[1]).slice(0,6),
+    topRefs: Object.entries(byRef).sort((a,b)=>b[1]-a[1]).slice(0,5),
+  };
+}
+
+function renderStats(){
+  const doneTasks = allTasks().filter(t=>t.done).length;
+  const openTasks = allTasks().length - doneTasks;
+
+  let html = `<div class="hero"><div class="date">${fmtDate(todayStr())}</div><h1>📊 إحصائيات</h1><div class="summary">آخر 30 يوم</div></div>`;
+
+  if(!pageStats || pageStats.error){
+    html += `<div class="card"><div class="empty">${pageStats?.error? "صار خطأ بجلب زيارات الموقع — تأكد إنه جدول page_views موجود": "عم أجهز..."}</div></div>`;
+  } else {
+    html += `
+    <div class="stat-grid">
+      <div class="stat-tile"><b>${pageStats.today}</b><span>زيارة اليوم</span></div>
+      <div class="stat-tile"><b>${pageStats.total30d}</b><span>زيارة آخر 30 يوم</span></div>
+      <div class="stat-tile"><b>${meetings.length}</b><span>اجتماع</span></div>
+      <div class="stat-tile"><b>${openTasks}</b><span>مهمة مفتوحة (${doneTasks} منجزة)</span></div>
+    </div>
+
+    <div class="card">
+      <h2>الزيارات آخر ٧ أيام</h2>
+      <div class="bars">
+        ${(()=>{ const max = Math.max(1, ...pageStats.last7.map(d=>d.count));
+          return pageStats.last7.map(d=>`
+            <div class="bar-col">
+              <div class="bar" style="height:${Math.round(d.count/max*100)}%" title="${d.count}"></div>
+              <div class="bar-label">${dayName(d.day).slice(0,3)}<br>${d.count}</div>
+            </div>`).join("");
+        })()}
+      </div>
+    </div>
+
+    <div class="grid c2">
+      <div class="card">
+        <h2>أكتر الصفحات زيارة</h2>
+        ${pageStats.topPaths.length? pageStats.topPaths.map(([path,count])=>`<div class="toplist-row"><span>${esc(path)}</span><b>${count}</b></div>`).join("") : `<div class="empty">لسا ما في زيارات</div>`}
+      </div>
+      <div class="card">
+        <h2>مصدر الزوار</h2>
+        ${pageStats.topRefs.length? pageStats.topRefs.map(([ref,count])=>`<div class="toplist-row"><span>${esc(ref)}</span><b>${count}</b></div>`).join("") : `<div class="empty">لسا ما في بيانات</div>`}
+      </div>
+    </div>`;
+  }
+
+  html += `
+  <div class="card">
+    <h2>نشاط الفريق (اجتماعات)</h2>
+    ${meetings.length===0? `<div class="empty">ما في اجتماعات لسا</div>` : meetings.slice(0,8).map(m=>`
+      <div class="toplist-row"><span>${esc(m.title)} <span class="sub" style="margin:0">— ${fmtDate(m.date)}</span></span><b>${m.tasks.length} مهمة</b></div>
+    `).join("")}
+  </div>`;
+
+  return html;
+}
+
 function render(){
   const app = document.getElementById("app");
   if(view==="hub") app.innerHTML = renderHub();
   else if(view==="dash") app.innerHTML = renderDash();
   else if(view==="meet") app.innerHTML = renderMeetings();
   else if(view==="daily") app.innerHTML = renderDaily();
+  else if(view==="stats") app.innerHTML = renderStats();
   else app.innerHTML = renderDetail();
 }
 
@@ -927,8 +1036,16 @@ function renderHub(){
     <div class="hub-card" onclick="go('dash')"><div class="ico">📋</div><h3>لوحة اليوم</h3><p>كل مهام اجتماعاتك بمكان واحد — المتأخر، اليوم، والجاي.</p></div>
     <div class="hub-card" onclick="go('meet')"><div class="ico">🗓️</div><h3>الاجتماعات</h3><p>أنشئ اجتماع، سجّله صوتياً، وفصّل نقاطه لمهام تلقائياً.</p></div>
     <div class="hub-card" onclick="go('daily')"><div class="ico">⚡</div><h3>مهامي اليومية</h3><p>مهام شخصية سريعة — كتابة أو صوت، بدون أي ارتباط باجتماع.</p></div>
+    ${me?.is_admin? `<div class="hub-card" onclick="go('stats')"><div class="ico">📊</div><h3>إحصائيات</h3><p>زوار الموقع ونشاط الفريق — أرقام حية من قاعدة البيانات.</p></div>` : ""}
   </div>`;
 }
+
+/* تسجيل زيارة الصفحة (بدون تسجيل دخول، بدون أي بيانات شخصية) */
+fetch(SUPABASE_URL + "/rest/v1/page_views", {
+  method: "POST",
+  headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": "Bearer " + SUPABASE_ANON_KEY, "Content-Type": "application/json", "Prefer": "return=minimal" },
+  body: JSON.stringify({ path: location.pathname, referrer: document.referrer || null })
+}).catch(()=>{});
 
 checkSession();
 </script>
