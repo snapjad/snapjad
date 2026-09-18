@@ -199,6 +199,7 @@
       <button id="nav-dash" onclick="go('dash')">📋 لوحة اليوم</button>
       <button id="nav-meet" onclick="go('meet')">🗓️ الاجتماعات</button>
       <button id="nav-daily" onclick="go('daily')">⚡ مهامي اليومية</button>
+      <button id="nav-projects" onclick="go('projects')">🚀 المشاريع</button>
       <button id="nav-stats" onclick="go('stats')" style="display:none">📊 إحصائيات</button>
       <span class="who" id="who-label"></span>
       <button onclick="doLogout()">🚪 خروج</button>
@@ -224,10 +225,13 @@ let me = null;          // {id, full_name} — المستخدم الحالي
 let teamProfiles = [];  // كل أسماء الفريق [{id, full_name}]
 let meetings = [];      // اجتماعاتي (كل وحدة فيها attendees[] و tasks[])
 let dailyTasks = [];    // مهام سريعة مش تابعة لأي اجتماع
+let projects = [];      // مشاريع (كل وحدة فيها items[] أكشن بوينتس وأفكار)
 let view = "hub";
 let openMeetingId = null;
+let openProjectId = null;
 let previewTasks = null;
 let previewSummary = "";
+let projectPreviewItems = null;
 const requestedView = new URLSearchParams(location.search).get("view");
 
 /* ============================================================
@@ -359,16 +363,21 @@ function allTasks(){
 /* ============================================================
    ٤) التنقل
    ============================================================ */
-async function go(v, meetingId){
+async function go(v, id){
   if(recording) stopRec();
-  view = v; openMeetingId = meetingId ?? null; previewTasks = null;
+  view = v;
+  openMeetingId = (v==="detail")? (id ?? null) : null;
+  openProjectId = (v==="project")? (id ?? null) : null;
+  previewTasks = null; projectPreviewItems = null;
   document.getElementById("nav-hub").classList.toggle("active", v==="hub");
   document.getElementById("nav-dash").classList.toggle("active", v==="dash");
   document.getElementById("nav-meet").classList.toggle("active", v==="meet"||v==="detail");
   document.getElementById("nav-daily").classList.toggle("active", v==="daily");
+  document.getElementById("nav-projects").classList.toggle("active", v==="projects"||v==="project");
   document.getElementById("nav-stats").classList.toggle("active", v==="stats");
   if(v==="daily") await loadDailyTasks();
   if(v==="stats") await loadStats();
+  if(v==="projects"||v==="project") await loadProjects();
   render();
   window.scrollTo(0,0);
 }
@@ -1026,6 +1035,8 @@ function render(){
   else if(view==="meet") app.innerHTML = renderMeetings();
   else if(view==="daily") app.innerHTML = renderDaily();
   else if(view==="stats") app.innerHTML = renderStats();
+  else if(view==="projects") app.innerHTML = renderProjectsList();
+  else if(view==="project") app.innerHTML = renderProjectDetail();
   else app.innerHTML = renderDetail();
 }
 
@@ -1036,8 +1047,281 @@ function renderHub(){
     <div class="hub-card" onclick="go('dash')"><div class="ico">📋</div><h3>لوحة اليوم</h3><p>كل مهام اجتماعاتك بمكان واحد — المتأخر، اليوم، والجاي.</p></div>
     <div class="hub-card" onclick="go('meet')"><div class="ico">🗓️</div><h3>الاجتماعات</h3><p>أنشئ اجتماع، سجّله صوتياً، وفصّل نقاطه لمهام تلقائياً.</p></div>
     <div class="hub-card" onclick="go('daily')"><div class="ico">⚡</div><h3>مهامي اليومية</h3><p>مهام شخصية سريعة — كتابة أو صوت، بدون أي ارتباط باجتماع.</p></div>
+    <div class="hub-card" onclick="go('projects')"><div class="ico">🚀</div><h3>المشاريع</h3><p>مشاريع بأكشن بوينتس ومسؤولين وديدلاينات، وقسم أفكار منفصل.</p></div>
     ${me?.is_admin? `<div class="hub-card" onclick="go('stats')"><div class="ico">📊</div><h3>إحصائيات</h3><p>زوار الموقع ونشاط الفريق — أرقام حية من قاعدة البيانات.</p></div>` : ""}
   </div>`;
+}
+
+/* ============================================================
+   ١٠) المشاريع (أكشن بوينتس + أفكار)
+   ============================================================ */
+async function loadProjects(){
+  const { data, error } = await sb.from("projects").select("*, project_items(*)").order("created_at", { ascending: false });
+  if(error){ console.error(error); projects = []; return; }
+  projects = (data || []).map(p => ({
+    id: p.id, name: p.name, description: p.description,
+    items: (p.project_items || []).map(it => ({
+      id: it.id, kind: it.kind, desc: it.description, owner: it.owner_name, ownerId: it.owner_id,
+      due: it.due_date, notes: it.notes, done: it.is_done
+    }))
+  }));
+}
+
+function renderProjectsList(){
+  let html = `
+  <div class="card">
+    <h2>مشروع جديد</h2>
+    <div class="grid c2">
+      <div><label>اسم المشروع</label><input id="proj-name" placeholder="مثلاً: شعبة ب"></div>
+      <div><label>وصف مختصر</label><input id="proj-desc" placeholder="اختياري"></div>
+    </div>
+    <button class="btn" id="create-project-btn" onclick="addProject()">إنشاء المشروع</button>
+  </div>
+  <div class="card">
+    <h2>المشاريع <span class="count" style="font-size:13px">(${projects.length})</span></h2>`;
+  if(projects.length===0){ html += `<div class="empty">ما في مشاريع لسا</div>`; }
+  else projects.forEach(p=>{
+    const openCount = p.items.filter(i=>i.kind==="action" && !i.done).length;
+    const ideasCount = p.items.filter(i=>i.kind==="idea").length;
+    const shortDesc = (p.description||"").slice(0,100);
+    html += `
+    <div class="meeting-row" onclick="go('project','${p.id}')">
+      <div class="info"><div class="title">🚀 ${esc(p.name)}</div><div class="details">${esc(shortDesc)}${(p.description||"").length>100?"…":""}</div></div>
+      <div class="m-stat"><b>${openCount}</b>مفتوحة</div>
+      <div class="m-stat"><b>${ideasCount}</b>أفكار</div>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+async function addProject(){
+  const name = document.getElementById("proj-name").value.trim();
+  if(!name){ flagInput("proj-name"); return; }
+  const btn = document.getElementById("create-project-btn");
+  btn.disabled = true; btn.textContent = "عم أنشئ...";
+  const { error } = await sb.from("projects").insert({
+    name, description: document.getElementById("proj-desc").value.trim() || null, created_by: me.id
+  });
+  if(error){ alert("صار خطأ: " + error.message); btn.disabled=false; btn.textContent="إنشاء المشروع"; return; }
+  await loadProjects();
+  render();
+}
+
+function renderProjectDetail(){
+  const p = projects.find(x=>x.id===openProjectId);
+  if(!p) return renderProjectsList();
+
+  const actions = p.items.filter(i=>i.kind==="action");
+  const ideas = p.items.filter(i=>i.kind==="idea");
+  const groups = { late:[], today:[], up:[], done:[] };
+  actions.forEach(t => groups[taskStatus(t)].push(t));
+  groups.late.sort((a,b)=>(a.due||"").localeCompare(b.due||""));
+  groups.up.sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
+
+  let html = `
+  <button class="back" onclick="go('projects')">→ رجوع للمشاريع</button>
+  <div class="card">
+    <h2>🚀 ${esc(p.name)}</h2>
+    ${p.description? `<div class="sub" style="white-space:pre-wrap;line-height:1.8;margin-top:6px">${esc(p.description)}</div>` : ""}
+  </div>
+
+  <div class="card smart">
+    <h2>الإدخال الذكي — أكشن بوينتس</h2>
+    <div class="sub">سجّل صوتياً أو اكتب/الصق نقاط العمل — وبتفصّلها مهام بمسؤول وديدلاين تلقائياً</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn rec" id="proj-rec-btn" onclick="toggleProjRec()">🎙️ سجّل</button>
+      <span class="rec-status" id="proj-rec-status"></span>
+    </div>
+    <textarea id="proj-smart-text" placeholder="الصق أو اكتب الأكشن بوينتس هون..."></textarea>
+    <div style="margin-top:10px"><button class="btn gold" id="proj-smart-btn" onclick="projSmartParse()">✨ فصّلها أكشن بوينتس</button></div>
+    <div id="proj-smart-out"></div>
+  </div>
+
+  <div class="card">
+    <h2>أكشن بوينتس <span class="count" style="font-size:13px">(${actions.length})</span></h2>`;
+  if(actions.length===0){ html += `<div class="empty">ما في أكشن بوينتس لسا — ضيفها من فوق</div>`; }
+  else [["late","🔴"],["today","🟡"],["up","🟢"],["done","✅"]].forEach(([key,icon])=>{
+    if(groups[key].length===0) return;
+    html += `<div class="group-title">${icon} ${STATUS_LABEL[key]} <span class="count">${groups[key].length}</span></div>`;
+    groups[key].forEach(t => html += `
+      <div class="task ${t.done?"done":""}">
+        <input type="checkbox" ${t.done?"checked":""} onchange="toggleProjectItem('${t.id}', this.checked)">
+        <div class="body">
+          <div class="title">${esc(t.desc)}</div>
+          <div class="meta"><span>👤 ${esc(t.owner||"—")}</span><span class="badge ${taskStatus(t)}">📅 ${fmtDate(t.due)}</span></div>
+          ${t.notes? `<div class="notes">📝 ${esc(t.notes)}</div>`:""}
+        </div>
+        <button class="btn danger small" onclick="deleteProjectItem(this,'${t.id}')">حذف</button>
+      </div>`);
+  });
+  html += `</div>
+
+  <div class="card">
+    <h2>أفكار <span class="count" style="font-size:13px">(${ideas.length})</span></h2>
+    <div class="sub">اقتراحات لسا مو محسومة — بدون مسؤول أو ديدلاين</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input id="idea-input" placeholder="فكرة جديدة..." onkeydown="if(event.key==='Enter')addIdea()">
+      <button class="btn small" onclick="addIdea()">إضافة</button>
+    </div>`;
+  if(ideas.length===0){ html += `<div class="empty">ما في أفكار لسا</div>`; }
+  else ideas.forEach(i => html += `
+    <div class="task">
+      <div class="body"><div class="title">${esc(i.desc)}</div></div>
+      <button class="btn danger small" onclick="deleteProjectItem(this,'${i.id}')">حذف</button>
+    </div>`);
+  html += `</div>`;
+  return html;
+}
+
+async function toggleProjectItem(id, done){
+  const { error } = await sb.from("project_items").update({ is_done: done }).eq("id", id);
+  if(error){ alert("صار خطأ: " + error.message); }
+  await loadProjects(); render();
+}
+async function deleteProjectItem(btn, id){
+  if(btn.dataset.armed !== "1"){
+    btn.dataset.armed = "1"; btn.textContent = "متأكد؟";
+    setTimeout(()=>{ btn.dataset.armed = "0"; btn.textContent = "حذف"; }, 2500);
+    return;
+  }
+  await sb.from("project_items").delete().eq("id", id);
+  await loadProjects(); render();
+}
+async function addIdea(){
+  const input = document.getElementById("idea-input");
+  const text = input.value.trim();
+  if(!text){ flagInput("idea-input"); return; }
+  input.disabled = true;
+  const { error } = await sb.from("project_items").insert({ project_id: openProjectId, kind: "idea", description: text });
+  input.disabled = false;
+  if(error){ alert("صار خطأ: " + error.message); return; }
+  input.value = "";
+  await loadProjects(); render();
+}
+
+async function projSmartParse(){
+  const text = document.getElementById("proj-smart-text").value.trim();
+  if(!text){ flagInput("proj-smart-text"); return; }
+  const btn = document.getElementById("proj-smart-btn");
+  const out = document.getElementById("proj-smart-out");
+  btn.disabled = true;
+  out.innerHTML = `<div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span> عم أفصّل النقاط...</div>`;
+  const names = teamProfiles.map(p=>p.full_name);
+  try{
+    const { data, error } = await sb.functions.invoke("smart-parse", {
+      body: { text, teamNames: names, todayStr: todayStr(), dayNameStr: dayName(todayStr()) }
+    });
+    if(error) throw error;
+    if(!data || !Array.isArray(data.tasks) || data.tasks.length===0) throw new Error("empty");
+    projectPreviewItems = data.tasks;
+    renderProjPreview();
+  }catch(err){
+    out.innerHTML = `<div class="sub" style="color:var(--danger);margin-top:10px">صار خطأ بالتحليل — جرب مرة ثانية أو قسّم النقاط أوضح.</div>`;
+  }
+  btn.disabled = false;
+}
+
+function renderProjPreview(){
+  const out = document.getElementById("proj-smart-out");
+  let html = `<div class="sub" style="margin:14px 0 8px">✅ فصّلتلك <b>${projectPreviewItems.length}</b> أكشن بوينت — راجعها وعدّل ثم أكّد:</div>`;
+  projectPreviewItems.forEach((t,i)=>{
+    html += `
+    <div class="preview-item">
+      <div class="grid c2">
+        <div><label>الأكشن بوينت</label><input value="${esc(t.desc)}" onchange="projectPreviewItems[${i}].desc=this.value"></div>
+        <div><label>المسؤول (اسم حر)</label><input value="${esc(t.owner||"")}" onchange="projectPreviewItems[${i}].owner=this.value"></div>
+      </div>
+      <div class="grid c2">
+        <div><label>الديدلاين</label><input type="date" value="${t.due||""}" onchange="projectPreviewItems[${i}].due=this.value"></div>
+        <div><label>ملاحظات</label><input value="${esc(t.notes||"")}" onchange="projectPreviewItems[${i}].notes=this.value"></div>
+      </div>
+      <button class="btn danger small" onclick="projectPreviewItems.splice(${i},1);renderProjPreview()">شيل هاي</button>
+    </div>`;
+  });
+  html += `<button class="btn" id="confirm-proj-preview-btn" onclick="confirmProjPreview()">✔️ أضف الكل (${projectPreviewItems.length})</button>`;
+  out.innerHTML = html;
+}
+
+async function confirmProjPreview(){
+  const btn = document.getElementById("confirm-proj-preview-btn");
+  btn.disabled = true; btn.textContent = "عم أضيف...";
+  const rows = projectPreviewItems.map(t=>{
+    const owner = findProfileByName(t.owner);
+    return {
+      project_id: openProjectId, kind: "action",
+      description: t.desc || "أكشن بوينت",
+      owner_id: owner?.id || null,
+      owner_name: (t.owner || "").trim(),
+      due_date: t.due || null,
+      notes: t.notes || "",
+      is_done: false
+    };
+  });
+  const { error } = await sb.from("project_items").insert(rows);
+  if(error){ alert("صار خطأ: " + error.message); }
+  projectPreviewItems = null;
+  const textBox = document.getElementById("proj-smart-text");
+  if(textBox) textBox.value = "";
+  await loadProjects();
+  render();
+}
+
+/* ---------- 🎙️ تسجيل صوتي لصفحة المشروع ---------- */
+let projMediaRecorder = null, projMediaStream = null, projRecording = false, projAudioChunks = [];
+async function toggleProjRec(){
+  const status = document.getElementById("proj-rec-status");
+  if(projRecording){ stopProjRec(); return; }
+  if(!navigator.mediaDevices?.getUserMedia){ status.textContent = "⚠️ متصفحك ما بيدعم تسجيل الصوت"; return; }
+
+  try{ projMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch(e){ status.textContent = "⚠️ ما قدرت أوصل للمايكروفون"; return; }
+
+  projAudioChunks = [];
+  const preferredTypes = ["audio/mp4", "audio/aac", "audio/webm;codecs=opus", "audio/webm"];
+  const supportedType = preferredTypes.find(t => window.MediaRecorder?.isTypeSupported?.(t));
+  projMediaRecorder = supportedType ? new MediaRecorder(projMediaStream, { mimeType: supportedType }) : new MediaRecorder(projMediaStream);
+  projMediaRecorder.ondataavailable = (e)=>{ if(e.data.size>0) projAudioChunks.push(e.data); };
+  projMediaRecorder.onstop = onProjRecordingStopped;
+  projMediaRecorder.start();
+  projRecording = true;
+
+  const btn = document.getElementById("proj-rec-btn");
+  btn.textContent = "⏹️ وقّف التسجيل"; btn.classList.add("on");
+  status.textContent = "🔴 عم أسجل... احكوا طبيعي"; status.classList.add("live");
+}
+
+function stopProjRec(){
+  projRecording = false;
+  try{ projMediaRecorder?.stop(); }catch(e){}
+  try{ projMediaStream?.getTracks().forEach(t=>t.stop()); }catch(e){}
+  const btn = document.getElementById("proj-rec-btn");
+  if(btn){ btn.textContent = "🎙️ سجّل"; btn.classList.remove("on"); }
+}
+
+async function onProjRecordingStopped(){
+  const status = document.getElementById("proj-rec-status");
+  if(!status) return;
+  status.classList.remove("live");
+  status.textContent = "⏳ عم أرفع وأفرّغ الصوت...";
+
+  const blob = new Blob(projAudioChunks, { type: projMediaRecorder.mimeType || "audio/webm" });
+  const ext = (blob.type.split("/")[1] || "webm").split(";")[0];
+  const path = `project/${openProjectId}/${Date.now()}.${ext}`;
+  await sb.storage.from("recordings").upload(path, blob, { contentType: blob.type });
+
+  const form = new FormData();
+  form.append("file", blob, `recording.${ext}`);
+  const { data, error } = await sb.functions.invoke("transcribe-meeting", { body: form });
+
+  if(error || !data?.transcript){
+    status.textContent = "⚠️ صار خطأ بالتفريغ — جرب مرة ثانية"; return;
+  }
+
+  const box = document.getElementById("proj-smart-text");
+  const prev = box.value.trim();
+  box.value = (prev ? prev + "\n" : "") + data.transcript;
+  status.textContent = "✔️ خلص التفريغ — راجع النص ثم اكبس فصّلها أكشن بوينتس";
 }
 
 /* تسجيل زيارة الصفحة (بدون تسجيل دخول، بدون أي بيانات شخصية) */
