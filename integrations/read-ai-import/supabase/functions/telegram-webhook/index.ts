@@ -46,19 +46,36 @@ async function transcribeVoice(fileId: string): Promise<string | null> {
   return result?.data?.originalTranscript || result?.data?.transcription || null;
 }
 
-async function extractTasks(text: string) {
-  const prompt = `أنت مساعد شخصي لإدارة مهام يومية. المستخدم بعتلك رسالة (كتابة أو تفريغ صوتي) بالعربي، لهجة أردنية أو عراقية غالباً. استخرج منها مهمة أو أكتر (action points فقط، تجاهل أي كلام جانبي أو سلام).
+type ExtractedItem = {
+  destination: "daily" | "project";
+  project_name?: string | null;
+  kind?: "action" | "idea" | null;
+  desc: string;
+  owner?: string | null;
+  due?: string | null;
+  notes?: string | null;
+};
 
-معلومات:
+async function extractItems(text: string, projectNames: string[]): Promise<ExtractedItem[]> {
+  const prompt = `أنت مساعد ذكي شخصي لإدارة مهام ومشاريع بالعربي (لهجة أردنية أو عراقية غالباً، كتابة أو تفريغ صوتي). حلل الرسالة بعمق وافهم القصد الحقيقي — لا تكتفِ بنسخ الكلام، ميّز كل نقطة عمل أو فكرة مستقلة فيها وتجاهل السلام والحشو والكلام الجانبي.
+
+معلومات تساعدك:
 - تاريخ اليوم: ${todayStr()} وهو يوم ${dayName()}
+- المشاريع الموجودة حالياً بالنظام: ${projectNames.length ? projectNames.join("، ") : "لا يوجد أي مشروع بعد"}
 
-قواعد:
-1. كل نقطة عمل مستقلة = مهمة منفصلة
-2. حوّل أي موعد نسبي (الخميس، بكرا...) لتاريخ فعلي YYYY-MM-DD. إذا ما في موعد واضح خليه null
-3. الوصف يكون مختصر وواضح
+لكل نقطة عمل أو فكرة مستقلة حدد:
+1. "destination": اكتب "project" فقط إذا ذكر المستخدم صراحة اسم أحد المشاريع أعلاه، أو كان مضمون الكلام واضح جداً إنه يخص أحدها تحديداً (مو مجرد تخمين). غير هيك اكتب "daily" (تعتبر مهمة شخصية عادية).
+2. إذا كانت destination="project": حدد "project_name" (لازم يطابق اسم من القائمة أعلاه بالضبط)، و"kind": اكتب "action" إذا كانت خطوة عمل واضحة إلها مسؤول أو التزام أو قرار متخذ، أو "idea" إذا كانت مجرد اقتراح أو فكرة لسا مو محسومة ومحتاجة نقاش.
+3. "desc": وصف مختصر وواضح ومفهوم للنقطة (لا تنسخ الكلام حرفياً لو كان ركيك، أعد صياغته بوضوح)
+4. "owner": اسم الشخص المسؤول عن هاي النقطة تحديداً إذا انذكر، وإلا ""
+5. "due": حوّل أي موعد نسبي (الخميس، بكرا، الأسبوع الجاي...) لتاريخ فعلي بصيغة YYYY-MM-DD بناءً على تاريخ اليوم أعلاه، أو null إذا ما في موعد واضح
+6. "notes": أي تفاصيل أو سياق إضافي مهم تستحق الحفظ بس مش جزء من الوصف الأساسي، وإلا ""
 
 أرجع JSON فقط بدون أي كلام إضافي وبدون markdown، بهاد الشكل بالضبط:
-{"tasks":[{"desc":"...","due":"2026-08-06","notes":""}]}
+{"items":[
+  {"destination":"daily","desc":"...","owner":"","due":null,"notes":""},
+  {"destination":"project","project_name":"شعبة ب","kind":"action","desc":"...","owner":"","due":null,"notes":""}
+]}
 
 الرسالة:
 """${text}"""`;
@@ -72,7 +89,7 @@ async function extractTasks(text: string) {
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 800,
+      max_tokens: 1500,
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -82,7 +99,7 @@ async function extractTasks(text: string) {
   const clean = raw.replace(/```json|```/g, "").trim();
   try {
     const parsed = JSON.parse(clean);
-    return Array.isArray(parsed.tasks) ? parsed.tasks : [];
+    return Array.isArray(parsed.items) ? parsed.items : [];
   } catch {
     return [];
   }
@@ -116,30 +133,61 @@ Deno.serve(async (req) => {
     return Response.json({ ok: true });
   }
 
-  const tasks = await extractTasks(text);
-  if (tasks.length === 0) {
-    await sendTelegramMessage(chatId, "⚠️ ما قدرت ألاقي مهمة واضحة بالرسالة");
+  const { data: projectRows } = await supabaseAdmin.from("projects").select("id, name");
+  const projects = projectRows || [];
+
+  const items = await extractItems(text, projects.map((p: { name: string }) => p.name));
+  if (items.length === 0) {
+    await sendTelegramMessage(chatId, "⚠️ ما قدرت ألاقي نقطة واضحة بالرسالة");
     return Response.json({ ok: true });
   }
 
-  const rows = tasks.map((t: { desc?: string; due?: string; notes?: string }) => ({
-    owner_id: DAILY_TASK_OWNER_ID,
-    description: t.desc || "مهمة",
-    due_date: t.due || null,
-    notes: t.notes || "",
-    is_done: false,
-  }));
+  const dailyRows: { description: string; due_date: string | null; notes: string; owner_id: string; is_done: boolean }[] = [];
+  const projectRowsToInsert: { project_id: string; kind: string; description: string; owner_name: string; due_date: string | null; notes: string; is_done: boolean }[] = [];
+  const summaryLines: string[] = [];
 
-  const { error } = await supabaseAdmin.from("daily_tasks").insert(rows);
-  if (error) {
-    await sendTelegramMessage(chatId, "⚠️ صار خطأ بالإضافة لقاعدة البيانات");
-    return Response.json({ ok: true });
+  for (const it of items) {
+    const desc = it.desc || "بند";
+    let matchedProject = null as { id: string; name: string } | null;
+    if (it.destination === "project" && it.project_name) {
+      matchedProject = projects.find((p: { id: string; name: string }) =>
+        p.name === it.project_name || p.name.includes(it.project_name!) || it.project_name!.includes(p.name)
+      ) || null;
+    }
+
+    if (matchedProject) {
+      const kind = it.kind === "idea" ? "idea" : "action";
+      projectRowsToInsert.push({
+        project_id: matchedProject.id,
+        kind,
+        description: desc,
+        owner_name: it.owner || "",
+        due_date: it.due || null,
+        notes: it.notes || "",
+        is_done: false,
+      });
+      summaryLines.push(`• [${matchedProject.name} — ${kind === "idea" ? "فكرة" : "أكشن بوينت"}] ${desc}${it.due ? " — " + it.due : ""}`);
+    } else {
+      dailyRows.push({
+        owner_id: DAILY_TASK_OWNER_ID,
+        description: desc,
+        due_date: it.due || null,
+        notes: it.notes || "",
+        is_done: false,
+      });
+      summaryLines.push(`• [مهمة يومية] ${desc}${it.due ? " — " + it.due : ""}`);
+    }
   }
 
-  const summary = rows.map((r: { description: string; due_date: string | null }) =>
-    `• ${r.description}${r.due_date ? " — " + r.due_date : ""}`
-  ).join("\n");
-  await sendTelegramMessage(chatId, `✅ ضفت ${rows.length} مهمة:\n${summary}`);
+  if (dailyRows.length) {
+    const { error } = await supabaseAdmin.from("daily_tasks").insert(dailyRows);
+    if (error) { await sendTelegramMessage(chatId, "⚠️ صار خطأ بإضافة المهام اليومية"); return Response.json({ ok: true }); }
+  }
+  if (projectRowsToInsert.length) {
+    const { error } = await supabaseAdmin.from("project_items").insert(projectRowsToInsert);
+    if (error) { await sendTelegramMessage(chatId, "⚠️ صار خطأ بإضافة بنود المشروع"); return Response.json({ ok: true }); }
+  }
 
+  await sendTelegramMessage(chatId, `✅ ضفت ${items.length}:\n${summaryLines.join("\n")}`);
   return Response.json({ ok: true });
 });
