@@ -135,6 +135,15 @@
   .toplist-row:last-child{border-bottom:none}
   .toplist-row b{color:var(--primary)}
 
+  /* ===== جدول المعلمين ===== */
+  .data-table{width:100%;border-collapse:collapse;font-size:14px}
+  .data-table th{text-align:right;font-size:12px;color:var(--muted);font-weight:700;padding:8px 6px;border-bottom:2px solid var(--line)}
+  .data-table td{padding:10px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .data-table tr:last-child td{border-bottom:none}
+  .data-table .yn{cursor:pointer;font-size:18px;user-select:none}
+  .data-table input[type=text]{border:none;background:transparent;padding:2px;font-size:13px;color:var(--muted);width:100%}
+  .data-table input[type=text]:focus{background:var(--bg);border-radius:6px}
+
   /* ===== شاشة تسجيل الدخول ===== */
   @keyframes loginAurora1{0%,100%{transform:translate(-8%,-6%) scale(1)}50%{transform:translate(8%,10%) scale(1.2)}}
   @keyframes loginAurora2{0%,100%{transform:translate(6%,4%) scale(1.05)}50%{transform:translate(-10%,-10%) scale(1)}}
@@ -1056,13 +1065,17 @@ function renderHub(){
    ١٠) المشاريع (أكشن بوينتس + أفكار)
    ============================================================ */
 async function loadProjects(){
-  const { data, error } = await sb.from("projects").select("*, project_items(*)").order("created_at", { ascending: false });
+  const { data, error } = await sb.from("projects").select("*, project_items(*), project_teachers(*)").order("created_at", { ascending: false });
   if(error){ console.error(error); projects = []; return; }
   projects = (data || []).map(p => ({
     id: p.id, name: p.name, description: p.description,
     items: (p.project_items || []).map(it => ({
       id: it.id, kind: it.kind, desc: it.description, owner: it.owner_name, ownerId: it.owner_id,
       due: it.due_date, notes: it.notes, done: it.is_done
+    })),
+    teachers: (p.project_teachers || []).map(t => ({
+      id: t.id, name: t.teacher_name, subject: t.subject,
+      hasSessions: t.has_new_sessions, hasReel: t.has_reel, notes: t.notes
     }))
   }));
 }
@@ -1120,6 +1133,9 @@ function renderProjectDetail(){
   groups.up.sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
 
   const doneCount = actions.filter(a=>a.done).length;
+  const teachers = p.teachers || [];
+  const reelCount = teachers.filter(t=>t.hasReel).length;
+  const sessionsCount = teachers.filter(t=>t.hasSessions).length;
 
   let html = `
   <button class="back" onclick="go('projects')">→ رجوع للمشاريع</button>
@@ -1134,6 +1150,27 @@ function renderProjectDetail(){
     <div class="stat-tile"><b>${groups.up.length}</b><span>🟢 قادمة</span></div>
     <div class="stat-tile"><b>${doneCount}</b><span>✅ منجزة</span></div>
   </div>
+
+  <div class="card">
+    <h2>حالة المعلمين <span class="count" style="font-size:13px">(${teachers.length})</span></h2>
+    <div class="sub">${sessionsCount}/${teachers.length} صوّروا حصص شعبة ب جديدة · ${reelCount}/${teachers.length} عندهم ريل عن شعبة ب</div>
+    <div style="display:flex;gap:8px;margin:10px 0"><input id="teacher-name-input" placeholder="اسم معلم جديد..." style="flex:1" onkeydown="if(event.key==='Enter')addTeacher()"><button class="btn small" onclick="addTeacher()">إضافة</button></div>`;
+  if(teachers.length===0){ html += `<div class="empty">ما في معلمين مضافين لسا</div>`; }
+  else{
+    html += `<div style="overflow-x:auto"><table class="data-table"><thead><tr>
+      <th>المعلم</th><th>حصص شعبة ب جديدة</th><th>ريل شعبة ب</th><th>ملاحظات</th><th></th>
+    </tr></thead><tbody>`;
+    teachers.forEach(t => html += `
+      <tr>
+        <td><b>${esc(t.name)}</b>${t.subject? `<div class="sub" style="margin:0">${esc(t.subject)}</div>`:""}</td>
+        <td style="text-align:center"><span class="yn" onclick="toggleTeacherFlag('${t.id}','has_new_sessions',${!t.hasSessions})">${t.hasSessions?"✅":"❌"}</span></td>
+        <td style="text-align:center"><span class="yn" onclick="toggleTeacherFlag('${t.id}','has_reel',${!t.hasReel})">${t.hasReel?"✅":"❌"}</span></td>
+        <td><input type="text" value="${esc(t.notes||"")}" onchange="updateTeacherNotes('${t.id}', this.value)"></td>
+        <td><button class="btn danger small" onclick="deleteTeacher(this,'${t.id}')">حذف</button></td>
+      </tr>`);
+    html += `</tbody></table></div>`;
+  }
+  html += `</div>
 
   <div class="card">
     <h2>أكشن بوينتس <span class="count" style="font-size:13px">(${actions.length})</span></h2>`;
@@ -1206,6 +1243,37 @@ async function addIdea(){
   input.disabled = false;
   if(error){ alert("صار خطأ: " + error.message); return; }
   input.value = "";
+  await loadProjects(); render();
+}
+
+async function addTeacher(){
+  const input = document.getElementById("teacher-name-input");
+  const name = input.value.trim();
+  if(!name){ flagInput("teacher-name-input"); return; }
+  input.disabled = true;
+  const { error } = await sb.from("project_teachers").insert({ project_id: openProjectId, teacher_name: name });
+  input.disabled = false;
+  if(error){ alert("صار خطأ: " + error.message); return; }
+  input.value = "";
+  await loadProjects(); render();
+}
+async function toggleTeacherFlag(id, column, value){
+  const { error } = await sb.from("project_teachers").update({ [column]: value }).eq("id", id);
+  if(error){ alert("صار خطأ: " + error.message); }
+  await loadProjects(); render();
+}
+async function updateTeacherNotes(id, notes){
+  const { error } = await sb.from("project_teachers").update({ notes }).eq("id", id);
+  if(error){ alert("صار خطأ: " + error.message); }
+  await loadProjects();
+}
+async function deleteTeacher(btn, id){
+  if(btn.dataset.armed !== "1"){
+    btn.dataset.armed = "1"; btn.textContent = "متأكد؟";
+    setTimeout(()=>{ btn.dataset.armed = "0"; btn.textContent = "حذف"; }, 2500);
+    return;
+  }
+  await sb.from("project_teachers").delete().eq("id", id);
   await loadProjects(); render();
 }
 
