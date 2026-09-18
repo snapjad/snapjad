@@ -1119,6 +1119,8 @@ function renderProjectDetail(){
   groups.late.sort((a,b)=>(a.due||"").localeCompare(b.due||""));
   groups.up.sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
 
+  const doneCount = actions.filter(a=>a.done).length;
+
   let html = `
   <button class="back" onclick="go('projects')">→ رجوع للمشاريع</button>
   <div class="card">
@@ -1126,16 +1128,11 @@ function renderProjectDetail(){
     ${p.description? `<div class="sub" style="white-space:pre-wrap;line-height:1.8;margin-top:6px">${esc(p.description)}</div>` : ""}
   </div>
 
-  <div class="card smart">
-    <h2>الإدخال الذكي — أكشن بوينتس</h2>
-    <div class="sub">سجّل صوتياً أو اكتب/الصق نقاط العمل — وبتفصّلها مهام بمسؤول وديدلاين تلقائياً</div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-      <button class="btn rec" id="proj-rec-btn" onclick="toggleProjRec()">🎙️ سجّل</button>
-      <span class="rec-status" id="proj-rec-status"></span>
-    </div>
-    <textarea id="proj-smart-text" placeholder="الصق أو اكتب الأكشن بوينتس هون..."></textarea>
-    <div style="margin-top:10px"><button class="btn gold" id="proj-smart-btn" onclick="projSmartParse()">✨ فصّلها أكشن بوينتس</button></div>
-    <div id="proj-smart-out"></div>
+  <div class="stat-grid">
+    <div class="stat-tile"><b>${groups.late.length}</b><span>🔴 متأخرة</span></div>
+    <div class="stat-tile"><b>${groups.today.length}</b><span>🟡 اليوم</span></div>
+    <div class="stat-tile"><b>${groups.up.length}</b><span>🟢 قادمة</span></div>
+    <div class="stat-tile"><b>${doneCount}</b><span>✅ منجزة</span></div>
   </div>
 
   <div class="card">
@@ -1170,7 +1167,19 @@ function renderProjectDetail(){
       <div class="body"><div class="title">${esc(i.desc)}</div></div>
       <button class="btn danger small" onclick="deleteProjectItem(this,'${i.id}')">حذف</button>
     </div>`);
-  html += `</div>`;
+  html += `</div>
+
+  <div class="card smart">
+    <h2>الإدخال الذكي — أكشن بوينتس</h2>
+    <div class="sub">سجّل صوتياً أو اكتب/الصق نقاط العمل — وبتفصّلها مهام بمسؤول وديدلاين تلقائياً</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn rec" id="proj-rec-btn" onclick="toggleProjRec()">🎙️ سجّل</button>
+      <span class="rec-status" id="proj-rec-status"></span>
+    </div>
+    <textarea id="proj-smart-text" placeholder="الصق أو اكتب الأكشن بوينتس هون..."></textarea>
+    <div style="margin-top:10px"><button class="btn gold" id="proj-smart-btn" onclick="projSmartParse()">✨ فصّلها أكشن بوينتس</button></div>
+    <div id="proj-smart-out"></div>
+  </div>`;
   return html;
 }
 
