@@ -350,10 +350,12 @@ async function loadDailyTasks(){
 const todayStr = () => new Date().toISOString().slice(0,10);
 const DAYS = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
 function dayName(dateStr){ if(!dateStr) return ""; return DAYS[new Date(dateStr+"T12:00:00").getDay()]; }
+const EN_DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const EN_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 function fmtDate(dateStr){
   if(!dateStr) return "بدون موعد";
   const d = new Date(dateStr+"T12:00:00");
-  return dayName(dateStr)+" "+d.toLocaleDateString("ar-JO",{day:"numeric",month:"long"});
+  return EN_DAYS[d.getDay()]+" "+d.getDate()+" "+EN_MONTHS[d.getMonth()];
 }
 function taskStatus(t){
   if(t.done) return "done";
@@ -1009,7 +1011,7 @@ function renderStats(){
           return pageStats.last7.map(d=>`
             <div class="bar-col">
               <div class="bar" style="height:${Math.round(d.count/max*100)}%" title="${d.count}"></div>
-              <div class="bar-label">${dayName(d.day).slice(0,3)}<br>${d.count}</div>
+              <div class="bar-label">${EN_DAYS[new Date(d.day+"T12:00:00").getDay()]}<br>${d.count}</div>
             </div>`).join("");
         })()}
       </div>
