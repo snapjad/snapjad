@@ -241,6 +241,7 @@ let openProjectId = null;
 let previewTasks = null;
 let previewSummary = "";
 let projectPreviewItems = null;
+let editingItemId = null;
 const requestedView = new URLSearchParams(location.search).get("view");
 
 /* ============================================================
@@ -377,7 +378,7 @@ async function go(v, id){
   view = v;
   openMeetingId = (v==="detail")? (id ?? null) : null;
   openProjectId = (v==="project")? (id ?? null) : null;
-  previewTasks = null; projectPreviewItems = null;
+  previewTasks = null; projectPreviewItems = null; editingItemId = null;
   document.getElementById("nav-hub").classList.toggle("active", v==="hub");
   document.getElementById("nav-dash").classList.toggle("active", v==="dash");
   document.getElementById("nav-meet").classList.toggle("active", v==="meet"||v==="detail");
@@ -1178,16 +1179,7 @@ function renderProjectDetail(){
   else [["late","🔴"],["today","🟡"],["up","🟢"],["done","✅"]].forEach(([key,icon])=>{
     if(groups[key].length===0) return;
     html += `<div class="group-title">${icon} ${STATUS_LABEL[key]} <span class="count">${groups[key].length}</span></div>`;
-    groups[key].forEach(t => html += `
-      <div class="task ${t.done?"done":""}">
-        <input type="checkbox" ${t.done?"checked":""} onchange="toggleProjectItem('${t.id}', this.checked)">
-        <div class="body">
-          <div class="title">${esc(t.desc)}</div>
-          <div class="meta"><span>👤 ${esc(t.owner||"—")}</span><span class="badge ${taskStatus(t)}">📅 ${fmtDate(t.due)}</span></div>
-          ${t.notes? `<div class="notes">📝 ${esc(t.notes)}</div>`:""}
-        </div>
-        <button class="btn danger small" onclick="deleteProjectItem(this,'${t.id}')">حذف</button>
-      </div>`);
+    groups[key].forEach(t => html += projectItemRow(t));
   });
   html += `</div>
 
@@ -1199,11 +1191,7 @@ function renderProjectDetail(){
       <button class="btn small" onclick="addIdea()">إضافة</button>
     </div>`;
   if(ideas.length===0){ html += `<div class="empty">ما في أفكار لسا</div>`; }
-  else ideas.forEach(i => html += `
-    <div class="task">
-      <div class="body"><div class="title">${esc(i.desc)}</div></div>
-      <button class="btn danger small" onclick="deleteProjectItem(this,'${i.id}')">حذف</button>
-    </div>`);
+  else ideas.forEach(i => html += projectItemRow(i));
   html += `</div>
 
   <div class="card smart">
@@ -1218,6 +1206,83 @@ function renderProjectDetail(){
     <div id="proj-smart-out"></div>
   </div>`;
   return html;
+}
+
+function projectItemRow(t){
+  if(editingItemId === t.id){
+    return `
+    <div class="preview-item">
+      <div class="grid c2">
+        <div><label>الوصف</label><textarea id="ei-desc" style="min-height:80px">${esc(t.desc)}</textarea></div>
+        <div>
+          <label>المسؤول (اسم حر)</label><input id="ei-owner" value="${esc(t.owner||"")}" placeholder="اسم المسؤول">
+          <label style="margin-top:8px">ملاحظات</label><input id="ei-notes" value="${esc(t.notes||"")}">
+        </div>
+      </div>
+      <div class="grid c2">
+        <div><label>الديدلاين</label><input id="ei-due" type="date" value="${t.due||""}"></div>
+        <div><label>النوع</label>
+          <select id="ei-kind">
+            <option value="action" ${t.kind==="action"?"selected":""}>أكشن بوينت</option>
+            <option value="idea" ${t.kind==="idea"?"selected":""}>فكرة</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn small" id="ei-save-btn" onclick="saveItemEdit('${t.id}')">حفظ</button>
+        <button class="btn ghost small" onclick="cancelItemEdit()">إلغاء</button>
+      </div>
+    </div>`;
+  }
+  const isAction = t.kind === "action";
+  return `
+  <div class="task ${t.done?"done":""}">
+    ${isAction? `<input type="checkbox" ${t.done?"checked":""} onchange="toggleProjectItem('${t.id}', this.checked)">` : ""}
+    <div class="body">
+      <div class="title">${esc(t.desc)}</div>
+      ${isAction
+        ? `<div class="meta"><span>👤 ${esc(t.owner||"—")}</span><span class="badge ${taskStatus(t)}">📅 ${fmtDate(t.due)}</span></div>`
+        : (t.owner? `<div class="meta"><span>👤 ${esc(t.owner)}</span></div>` : "")}
+      ${t.notes? `<div class="notes">📝 ${esc(t.notes)}</div>`:""}
+    </div>
+    <button class="btn ghost small" onclick="startItemEdit('${t.id}')">تعديل</button>
+    <button class="btn danger small" onclick="deleteProjectItem(this,'${t.id}')">حذف</button>
+  </div>`;
+}
+
+function startItemEdit(id){
+  editingItemId = id;
+  render();
+  setTimeout(()=>document.getElementById("ei-desc")?.focus(), 0);
+}
+function cancelItemEdit(){
+  editingItemId = null;
+  render();
+}
+async function saveItemEdit(id){
+  const desc = document.getElementById("ei-desc").value.trim();
+  if(!desc){ flagInput("ei-desc"); return; }
+  const btn = document.getElementById("ei-save-btn");
+  btn.disabled = true; btn.textContent = "عم أحفظ...";
+
+  const ownerName = document.getElementById("ei-owner").value.trim();
+  const owner = findProfileByName(ownerName);
+  const { data, error } = await sb.from("project_items").update({
+    description: desc,
+    owner_name: ownerName,
+    owner_id: owner?.id || null,
+    due_date: document.getElementById("ei-due").value || null,
+    notes: document.getElementById("ei-notes").value.trim(),
+    kind: document.getElementById("ei-kind").value === "idea" ? "idea" : "action"
+  }).eq("id", id).select();
+
+  if(error || !data || data.length===0){
+    alert("ما انحفظ التعديل" + (error? ": " + error.message : " — ما عندك صلاحية تعدّل هاد البند"));
+    btn.disabled = false; btn.textContent = "حفظ";
+    return;
+  }
+  editingItemId = null;
+  await loadProjects(); render();
 }
 
 async function toggleProjectItem(id, done){
