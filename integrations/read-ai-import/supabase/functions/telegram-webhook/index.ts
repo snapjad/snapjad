@@ -6,6 +6,7 @@ const TELEGRAM_WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET")!;
 const MUNSIT_API_KEY = Deno.env.get("MUNSIT_API_KEY")!;
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const DAILY_TASK_OWNER_ID = Deno.env.get("DAILY_TASK_OWNER_ID")!;
+const ALLOWED_USER_IDS = (Deno.env.get("TELEGRAM_ALLOWED_USER_IDS") || "").split(",").map((s) => s.trim()).filter(Boolean);
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -118,6 +119,16 @@ Deno.serve(async (req) => {
   if (!message) return Response.json({ ok: true });
 
   const chatId = message.chat.id;
+
+  // Only allowlisted Telegram user ids may use the bot (it writes to the owner's tasks/projects and spends API credits).
+  // With no allowlist configured the bot stays locked and only tells the sender their own id, so the owner can add it.
+  const senderId = String(message.from?.id ?? "");
+  if (ALLOWED_USER_IDS.length === 0) {
+    await sendTelegramMessage(chatId, `🔒 البوت مقفل. معرّفك: ${senderId} — أعطيه لصاحب النظام حتى يفعّل الوصول.`);
+    return Response.json({ ok: true });
+  }
+  if (!ALLOWED_USER_IDS.includes(senderId)) return Response.json({ ok: true });
+
   let text: string | null = null;
 
   if (message.voice) {
