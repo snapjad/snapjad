@@ -290,7 +290,7 @@ async function afterLogin(){
   if(me.is_admin) document.getElementById("nav-stats").style.display = "";
 
   await loadMeetings();
-  if(["dash","meet","daily","stats"].includes(requestedView)) await go(requestedView);
+  if(["dash","meet","daily","stats","projects"].includes(requestedView)) await go(requestedView);
   else render();
 }
 
@@ -1071,7 +1071,7 @@ async function loadProjects(){
   const { data, error } = await sb.from("projects").select("*, project_items(*), project_teachers(*)").order("created_at", { ascending: false });
   if(error){ console.error(error); projects = []; return; }
   projects = (data || []).map(p => ({
-    id: p.id, name: p.name, description: p.description,
+    id: p.id, name: p.name, description: p.description, createdBy: p.created_by,
     items: (p.project_items || []).map(it => ({
       id: it.id, kind: it.kind, desc: it.description, owner: it.owner_name, ownerId: it.owner_id,
       due: it.due_date, notes: it.notes, done: it.is_done
@@ -1135,6 +1135,7 @@ function renderProjectDetail(){
   groups.late.sort((a,b)=>(a.due||"").localeCompare(b.due||""));
   groups.up.sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
 
+  const canEdit = canEditProject(p);
   const doneCount = actions.filter(a=>a.done).length;
   const teachers = p.teachers || [];
   const reelCount = teachers.filter(t=>t.hasReel).length;
@@ -1157,19 +1158,19 @@ function renderProjectDetail(){
   <div class="card">
     <h2>حالة المعلمين <span class="count" style="font-size:13px">(${teachers.length})</span></h2>
     <div class="sub">${sessionsCount}/${teachers.length} صوّروا حصص شعبة ب جديدة · ${reelCount}/${teachers.length} عندهم ريل عن شعبة ب</div>
-    <div style="display:flex;gap:8px;margin:10px 0"><input id="teacher-name-input" placeholder="اسم معلم جديد..." style="flex:1" onkeydown="if(event.key==='Enter')addTeacher()"><button class="btn small" onclick="addTeacher()">إضافة</button></div>`;
+    ${canEdit? `<div style="display:flex;gap:8px;margin:10px 0"><input id="teacher-name-input" placeholder="اسم معلم جديد..." style="flex:1" onkeydown="if(event.key==='Enter')addTeacher()"><button class="btn small" onclick="addTeacher()">إضافة</button></div>` : ""}`;
   if(teachers.length===0){ html += `<div class="empty">ما في معلمين مضافين لسا</div>`; }
   else{
     html += `<div style="overflow-x:auto"><table class="data-table"><thead><tr>
-      <th>المعلم</th><th>حصص شعبة ب جديدة</th><th>ريل شعبة ب</th><th>ملاحظات</th><th></th>
+      <th>المعلم</th><th>حصص شعبة ب جديدة</th><th>ريل شعبة ب</th><th>ملاحظات</th>${canEdit? "<th></th>" : ""}
     </tr></thead><tbody>`;
     teachers.forEach(t => html += `
       <tr>
         <td><b>${esc(t.name)}</b>${t.subject? `<div class="sub" style="margin:0">${esc(t.subject)}</div>`:""}</td>
-        <td style="text-align:center"><span class="yn" onclick="toggleTeacherFlag('${t.id}','has_new_sessions',${!t.hasSessions})">${t.hasSessions?"✅":"❌"}</span></td>
-        <td style="text-align:center"><span class="yn" onclick="toggleTeacherFlag('${t.id}','has_reel',${!t.hasReel})">${t.hasReel?"✅":"❌"}</span></td>
-        <td><input type="text" value="${esc(t.notes||"")}" onchange="updateTeacherNotes('${t.id}', this.value)"></td>
-        <td><button class="btn danger small" onclick="deleteTeacher(this,'${t.id}')">حذف</button></td>
+        <td style="text-align:center"><span class="yn" ${canEdit? `onclick="toggleTeacherFlag('${t.id}','has_new_sessions',${!t.hasSessions})"` : `style="cursor:default"`}>${t.hasSessions?"✅":"❌"}</span></td>
+        <td style="text-align:center"><span class="yn" ${canEdit? `onclick="toggleTeacherFlag('${t.id}','has_reel',${!t.hasReel})"` : `style="cursor:default"`}>${t.hasReel?"✅":"❌"}</span></td>
+        <td>${canEdit? `<input type="text" value="${esc(t.notes||"")}" onchange="updateTeacherNotes('${t.id}', this.value)">` : `<span class="sub" style="margin:0">${esc(t.notes||"")}</span>`}</td>
+        ${canEdit? `<td><button class="btn danger small" onclick="deleteTeacher(this,'${t.id}')">حذف</button></td>` : ""}
       </tr>`);
     html += `</tbody></table></div>`;
   }
@@ -1177,24 +1178,26 @@ function renderProjectDetail(){
 
   <div class="card">
     <h2>أكشن بوينتس <span class="count" style="font-size:13px">(${actions.length})</span></h2>`;
-  if(actions.length===0){ html += `<div class="empty">ما في أكشن بوينتس لسا — ضيفها من فوق</div>`; }
+  if(actions.length===0){ html += `<div class="empty">ما في أكشن بوينتس لسا${canEdit? " — ضيفها من تحت" : ""}</div>`; }
   else [["late","🔴"],["today","🟡"],["up","🟢"],["done","✅"]].forEach(([key,icon])=>{
     if(groups[key].length===0) return;
     html += `<div class="group-title">${icon} ${STATUS_LABEL[key]} <span class="count">${groups[key].length}</span></div>`;
-    groups[key].forEach(t => html += projectItemRow(t));
+    groups[key].forEach(t => html += projectItemRow(t, canEdit));
   });
   html += `</div>
 
   <div class="card">
     <h2>أفكار <span class="count" style="font-size:13px">(${ideas.length})</span></h2>
     <div class="sub">اقتراحات لسا مو محسومة — بدون مسؤول أو ديدلاين</div>
-    <div style="display:flex;gap:8px;margin-bottom:10px">
+    ${canEdit? `<div style="display:flex;gap:8px;margin-bottom:10px">
       <input id="idea-input" placeholder="فكرة جديدة..." onkeydown="if(event.key==='Enter')addIdea()">
       <button class="btn small" onclick="addIdea()">إضافة</button>
-    </div>`;
+    </div>` : ""}`;
   if(ideas.length===0){ html += `<div class="empty">ما في أفكار لسا</div>`; }
-  else ideas.forEach(i => html += projectItemRow(i));
-  html += `</div>
+  else ideas.forEach(i => html += projectItemRow(i, canEdit));
+  html += `</div>`;
+  if(!canEdit) return html;
+  html += `
 
   <div class="card smart">
     <h2>الإدخال الذكي — أكشن بوينتس</h2>
@@ -1210,8 +1213,12 @@ function renderProjectDetail(){
   return html;
 }
 
-function projectItemRow(t){
-  if(editingItemId === t.id){
+function canEditProject(p){
+  return !!(me && (me.is_admin || p.createdBy === me.id));
+}
+
+function projectItemRow(t, canEdit = true){
+  if(canEdit && editingItemId === t.id){
     return `
     <div class="preview-item">
       <div class="grid c2">
@@ -1239,7 +1246,7 @@ function projectItemRow(t){
   const isAction = t.kind === "action";
   return `
   <div class="task ${t.done?"done":""}">
-    ${isAction? `<input type="checkbox" ${t.done?"checked":""} onchange="toggleProjectItem('${t.id}', this.checked)">` : ""}
+    ${isAction? `<input type="checkbox" ${t.done?"checked":""} ${canEdit? `onchange="toggleProjectItem('${t.id}', this.checked)"` : "disabled"}>` : ""}
     <div class="body">
       <div class="title">${esc(t.desc)}</div>
       ${isAction
@@ -1247,8 +1254,8 @@ function projectItemRow(t){
         : (t.owner? `<div class="meta"><span>👤 ${esc(t.owner)}</span></div>` : "")}
       ${t.notes? `<div class="notes">📝 ${esc(t.notes)}</div>`:""}
     </div>
-    <button class="btn ghost small" onclick="startItemEdit('${t.id}')">تعديل</button>
-    <button class="btn danger small" onclick="deleteProjectItem(this,'${t.id}')">حذف</button>
+    ${canEdit? `<button class="btn ghost small" onclick="startItemEdit('${t.id}')">تعديل</button>
+    <button class="btn danger small" onclick="deleteProjectItem(this,'${t.id}')">حذف</button>` : ""}
   </div>`;
 }
 
