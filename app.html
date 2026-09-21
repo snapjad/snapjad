@@ -143,6 +143,9 @@
   .data-table .yn{cursor:pointer;font-size:18px;user-select:none}
   .data-table input[type=text]{border:none;background:transparent;padding:2px;font-size:13px;color:var(--muted);width:100%}
   .data-table input[type=text]:focus{background:var(--bg);border-radius:6px}
+  .data-table th .th-sub{font-weight:500;opacity:.8}
+  .t-summary{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px}
+  .t-summary .badge{font-size:13px;padding:4px 12px}
 
   /* ===== أسئلة للمدير ===== */
   .q-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:12px;border-inline-start:5px solid var(--line)}
@@ -1094,10 +1097,13 @@ async function loadProjects(){
       id: it.id, kind: it.kind, desc: it.description, owner: it.owner_name, ownerId: it.owner_id,
       due: it.due_date, notes: it.notes, done: it.is_done
     })),
-    teachers: (p.project_teachers || []).map(t => ({
-      id: t.id, name: t.teacher_name, subject: t.subject,
-      hasSessions: t.has_new_sessions, hasReel: t.has_reel, notes: t.notes
-    })),
+    teachers: (p.project_teachers || [])
+      .sort((a,b)=> String(a.created_at).localeCompare(String(b.created_at)))
+      .map(t => ({
+        id: t.id, name: t.teacher_name, subject: t.subject, approach: t.approach || "same_as_a",
+        lessonsUploaded: t.lessons_uploaded ?? null, prelaunchUploaded: t.prelaunch_uploaded ?? null,
+        hasReviewSessions: t.has_review_sessions ?? null, hasReel: !!t.has_reel, notes: t.notes
+      })),
     questions: (p.project_questions || [])
       .sort((a,b)=> (a.position - b.position) || String(a.created_at).localeCompare(String(b.created_at)))
       .map(q => ({ id: q.id, text: q.question, hint: q.hint, answer: q.answer, notes: q.notes }))
@@ -1159,8 +1165,15 @@ function renderProjectDetail(){
   const canEdit = canEditProject(p);
   const doneCount = actions.filter(a=>a.done).length;
   const teachers = p.teachers || [];
-  const reelCount = teachers.filter(t=>t.hasReel).length;
-  const sessionsCount = teachers.filter(t=>t.hasSessions).length;
+  const tStat = { done:0, gap:0, pending:0 };
+  teachers.forEach(t => tStat[teacherStatus(t)]++);
+  const separateNames = teachers.filter(t=>t.approach==="separate").map(t=>t.name);
+  const flagCell = (t, key, col) => {
+    const v = t[key];
+    const icon = v===true ? "✅" : v===false ? "❌" : "➖";
+    const title = v===true ? "تم" : v===false ? "ما تم" : "لم يُراجع بعد";
+    return `<td style="text-align:center"><span class="yn" title="${title}" ${canEdit? `onclick="cycleTeacherFlag('${t.id}','${col}')"` : `style="cursor:default"`}>${icon}</span></td>`;
+  };
 
   let html = `
   <button class="back" onclick="go('projects')">→ رجوع للمشاريع</button>
@@ -1178,23 +1191,38 @@ function renderProjectDetail(){
   </div>
 
   <div class="card">
-    <h2>حالة المعلمين <span class="count" style="font-size:13px">(${teachers.length})</span></h2>
-    <div class="sub">${sessionsCount}/${teachers.length} صوّروا حصص شعبة ب جديدة · ${reelCount}/${teachers.length} عندهم ريل عن شعبة ب</div>
+    <h2>حالة تصوير المعلمين <span class="count" style="font-size:13px">(${teachers.length})</span></h2>
+    <div class="sub" style="line-height:1.8">القاعدة: كل معلم بينزّل نفس حصص شعبة أ على شعبة ب، وبيضيف بعد كل درس حصة مراجعة وتثبيت لشعبة ب.${separateNames.length? ` الاستثناء: ${esc(separateNames.join("، "))} بيصوّر حصة لشعبة أ وحصة منفصلة لشعبة ب.` : ""}</div>
+    <div class="t-summary">
+      <span class="badge done">✅ مكتمل ${tStat.done}</span>
+      <span class="badge late">❌ ناقص ${tStat.gap}</span>
+      <span class="badge up">➖ قيد المراجعة ${tStat.pending}</span>
+    </div>
     ${canEdit? `<div style="display:flex;gap:8px;margin:10px 0"><input id="teacher-name-input" placeholder="اسم معلم جديد..." style="flex:1" onkeydown="if(event.key==='Enter')addTeacher()"><button class="btn small" onclick="addTeacher()">إضافة</button></div>` : ""}`;
   if(teachers.length===0){ html += `<div class="empty">ما في معلمين مضافين لسا</div>`; }
   else{
     html += `<div style="overflow-x:auto"><table class="data-table"><thead><tr>
-      <th>المعلم</th><th>حصص شعبة ب جديدة</th><th>ريل شعبة ب</th><th>ملاحظات</th>${canEdit? "<th></th>" : ""}
+      <th>المعلم</th><th>الحصص الأساسية<br><span class="th-sub">مرفوعة على شعبة ب</span></th><th>حصص ما قبل الإطلاق</th><th>حصة إضافية<br><span class="th-sub">بعد كل درس</span></th><th>ريل تسويقي</th><th>الحالة</th><th>ملاحظات</th>${canEdit? "<th></th>" : ""}
     </tr></thead><tbody>`;
-    teachers.forEach(t => html += `
+    teachers.forEach(t => {
+      const st = { done:["done","✅ مكتمل"], gap:["late","❌ ناقص"], pending:["up","➖ قيد المراجعة"] }[teacherStatus(t)];
+      const sep = t.approach === "separate";
+      html += `
       <tr>
-        <td><b>${esc(t.name)}</b>${t.subject? `<div class="sub" style="margin:0">${esc(t.subject)}</div>`:""}</td>
-        <td style="text-align:center"><span class="yn" ${canEdit? `onclick="toggleTeacherFlag('${t.id}','has_new_sessions',${!t.hasSessions})"` : `style="cursor:default"`}>${t.hasSessions?"✅":"❌"}</span></td>
-        <td style="text-align:center"><span class="yn" ${canEdit? `onclick="toggleTeacherFlag('${t.id}','has_reel',${!t.hasReel})"` : `style="cursor:default"`}>${t.hasReel?"✅":"❌"}</span></td>
+        <td><b>${esc(t.name)}</b>
+          <div style="margin-top:3px"><span class="badge ${sep? "today" : "type"}" ${canEdit? `style="cursor:pointer" title="اضغط للتبديل" onclick="toggleTeacherApproach('${t.id}')"` : ""}>${sep? "حصة منفصلة لكل شعبة" : "نفس حصص شعبة أ + مراجعة"}</span></div>
+        </td>
+        ${flagCell(t, "lessonsUploaded", "lessons_uploaded")}
+        ${flagCell(t, "prelaunchUploaded", "prelaunch_uploaded")}
+        ${flagCell(t, "hasReviewSessions", "has_review_sessions")}
+        ${flagCell(t, "hasReel", "has_reel")}
+        <td style="text-align:center"><span class="badge ${st[0]}">${st[1]}</span></td>
         <td>${canEdit? `<input type="text" value="${esc(t.notes||"")}" onchange="updateTeacherNotes('${t.id}', this.value)">` : `<span class="sub" style="margin:0">${esc(t.notes||"")}</span>`}</td>
         ${canEdit? `<td><button class="btn danger small" onclick="deleteTeacher(this,'${t.id}')">حذف</button></td>` : ""}
-      </tr>`);
-    html += `</tbody></table></div>`;
+      </tr>`;
+    });
+    html += `</tbody></table></div>
+    <div class="sub" style="margin:10px 0 0">✅ تم · ❌ ما تم · ➖ لم يُراجع بعد${canEdit? " — اضغط على الأيقونة لتغييرها" : ""}</div>`;
   }
   html += `</div>
 
@@ -1467,9 +1495,30 @@ async function addTeacher(){
   input.value = "";
   await loadProjects(); render();
 }
-async function toggleTeacherFlag(id, column, value){
-  const { error } = await sb.from("project_teachers").update({ [column]: value }).eq("id", id);
-  if(error){ alert("صار خطأ: " + error.message); }
+const TEACHER_FLAG_KEYS = { lessons_uploaded:"lessonsUploaded", prelaunch_uploaded:"prelaunchUploaded", has_review_sessions:"hasReviewSessions", has_reel:"hasReel" };
+function teacherStatus(t){
+  const required = [t.lessonsUploaded, t.prelaunchUploaded, t.hasReviewSessions];
+  if(required.some(v=>v===false)) return "gap";
+  if(required.every(v=>v===true)) return "done";
+  return "pending";
+}
+async function cycleTeacherFlag(id, column){
+  const p = projects.find(x=>x.id===openProjectId);
+  const t = p?.teachers.find(x=>x.id===id);
+  if(!t) return;
+  const cur = t[TEACHER_FLAG_KEYS[column]];
+  const next = column==="has_reel" ? !cur : (cur===null ? true : cur===true ? false : null);
+  const { data, error } = await sb.from("project_teachers").update({ [column]: next }).eq("id", id).select();
+  if(error || !data || data.length===0){ alert("ما انحفظ التعديل" + (error? ": " + error.message : "")); return; }
+  await loadProjects(); render();
+}
+async function toggleTeacherApproach(id){
+  const p = projects.find(x=>x.id===openProjectId);
+  const t = p?.teachers.find(x=>x.id===id);
+  if(!t) return;
+  const next = t.approach === "separate" ? "same_as_a" : "separate";
+  const { data, error } = await sb.from("project_teachers").update({ approach: next }).eq("id", id).select();
+  if(error || !data || data.length===0){ alert("ما انحفظ التعديل" + (error? ": " + error.message : "")); return; }
   await loadProjects(); render();
 }
 async function updateTeacherNotes(id, notes){
