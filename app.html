@@ -1202,7 +1202,7 @@ function renderProjectDetail(){
   if(teachers.length===0){ html += `<div class="empty">ما في معلمين مضافين لسا</div>`; }
   else{
     html += `<div style="overflow-x:auto"><table class="data-table"><thead><tr>
-      <th>المعلم</th><th>الحصص الأساسية<br><span class="th-sub">مرفوعة على شعبة ب</span></th><th>حصص ما قبل الإطلاق</th><th>حصة إضافية<br><span class="th-sub">بعد كل درس</span></th><th>ريل تسويقي</th><th>الحالة</th><th>ملاحظات</th>${canEdit? "<th></th>" : ""}
+      <th>المعلم</th><th>الحصص الأساسية<br><span class="th-sub">مرفوعة على شعبة ب</span></th><th>حصة إضافية<br><span class="th-sub">بعد كل درس</span></th><th>ريل تسويقي</th><th>الحالة</th><th>ملاحظات</th>${canEdit? "<th></th>" : ""}
     </tr></thead><tbody>`;
     teachers.forEach(t => {
       const st = { done:["done","✅ مكتمل"], gap:["late","❌ ناقص"], pending:["up","➖ قيد المراجعة"] }[teacherStatus(t)];
@@ -1211,9 +1211,9 @@ function renderProjectDetail(){
       <tr>
         <td><b>${esc(t.name)}</b>
           <div style="margin-top:3px"><span class="badge ${sep? "today" : "type"}" ${canEdit? `style="cursor:pointer" title="اضغط للتبديل" onclick="toggleTeacherApproach('${t.id}')"` : ""}>${sep? "حصة منفصلة لكل شعبة" : "نفس حصص شعبة أ + مراجعة"}</span></div>
+          ${t.prelaunchUploaded!==null? `<div class="sub" style="margin:4px 0 0">حصص ما قبل الإطلاق: <span class="yn" ${canEdit? `onclick="cycleTeacherFlag('${t.id}','prelaunch_uploaded')"` : `style="cursor:default"`}>${t.prelaunchUploaded?"✅":"❌"}</span></div>` : ""}
         </td>
         ${flagCell(t, "lessonsUploaded", "lessons_uploaded")}
-        ${flagCell(t, "prelaunchUploaded", "prelaunch_uploaded")}
         ${flagCell(t, "hasReviewSessions", "has_review_sessions")}
         ${flagCell(t, "hasReel", "has_reel")}
         <td style="text-align:center"><span class="badge ${st[0]}">${st[1]}</span></td>
@@ -1497,7 +1497,8 @@ async function addTeacher(){
 }
 const TEACHER_FLAG_KEYS = { lessons_uploaded:"lessonsUploaded", prelaunch_uploaded:"prelaunchUploaded", has_review_sessions:"hasReviewSessions", has_reel:"hasReel" };
 function teacherStatus(t){
-  const required = [t.lessonsUploaded, t.prelaunchUploaded, t.hasReviewSessions];
+  const required = [t.lessonsUploaded, t.hasReviewSessions];
+  if(t.prelaunchUploaded!==null) required.push(t.prelaunchUploaded); // pre-launch lessons apply to Samer Rashad only
   if(required.some(v=>v===false)) return "gap";
   if(required.every(v=>v===true)) return "done";
   return "pending";
@@ -1507,7 +1508,7 @@ async function cycleTeacherFlag(id, column){
   const t = p?.teachers.find(x=>x.id===id);
   if(!t) return;
   const cur = t[TEACHER_FLAG_KEYS[column]];
-  const next = column==="has_reel" ? !cur : (cur===null ? true : cur===true ? false : null);
+  const next = column==="has_reel" ? !cur : (column==="prelaunch_uploaded" ? !cur : cur===null ? true : cur===true ? false : null);
   const { data, error } = await sb.from("project_teachers").update({ [column]: next }).eq("id", id).select();
   if(error || !data || data.length===0){ alert("ما انحفظ التعديل" + (error? ": " + error.message : "")); return; }
   await loadProjects(); render();
