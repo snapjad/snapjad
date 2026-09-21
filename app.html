@@ -144,6 +144,22 @@
   .data-table input[type=text]{border:none;background:transparent;padding:2px;font-size:13px;color:var(--muted);width:100%}
   .data-table input[type=text]:focus{background:var(--bg);border-radius:6px}
 
+  /* ===== أسئلة للمدير ===== */
+  .q-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:12px;border-inline-start:5px solid var(--line)}
+  .q-card.yes{border-inline-start-color:var(--ok)}
+  .q-card.no{border-inline-start-color:var(--danger)}
+  .q-head{display:flex;gap:10px;align-items:flex-start}
+  .q-num{background:var(--primary-soft);color:var(--primary);border-radius:99px;min-width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0}
+  .q-text{font-weight:700;font-size:16px;line-height:1.7;flex:1}
+  .q-hint{font-size:12.5px;color:var(--muted);margin:4px 0 0}
+  .q-actions{display:flex;gap:10px;margin-top:12px}
+  .q-btn{flex:1;padding:13px 10px;border-radius:12px;border:2px solid var(--line);background:#fff;font-family:inherit;font-size:17px;font-weight:800;cursor:pointer;transition:.12s;color:var(--ink)}
+  .q-btn:hover{border-color:var(--primary)}
+  .q-btn.yes.on{background:var(--ok);border-color:var(--ok);color:#fff}
+  .q-btn.no.on{background:var(--danger);border-color:var(--danger);color:#fff}
+  .q-notes{margin-top:10px}
+  .q-tools{display:flex;gap:8px;margin-top:10px}
+
   /* ===== شاشة تسجيل الدخول ===== */
   @keyframes loginAurora1{0%,100%{transform:translate(-8%,-6%) scale(1)}50%{transform:translate(8%,10%) scale(1.2)}}
   @keyframes loginAurora2{0%,100%{transform:translate(6%,4%) scale(1.05)}50%{transform:translate(-10%,-10%) scale(1)}}
@@ -242,6 +258,7 @@ let previewTasks = null;
 let previewSummary = "";
 let projectPreviewItems = null;
 let editingItemId = null;
+let editingQuestionId = null;
 const requestedView = new URLSearchParams(location.search).get("view");
 
 /* ============================================================
@@ -379,17 +396,17 @@ async function go(v, id){
   if(recording) stopRec();
   view = v;
   openMeetingId = (v==="detail")? (id ?? null) : null;
-  openProjectId = (v==="project")? (id ?? null) : null;
-  previewTasks = null; projectPreviewItems = null; editingItemId = null;
+  openProjectId = (v==="project"||v==="pquestions")? (id ?? null) : null;
+  previewTasks = null; projectPreviewItems = null; editingItemId = null; editingQuestionId = null;
   document.getElementById("nav-hub").classList.toggle("active", v==="hub");
   document.getElementById("nav-dash").classList.toggle("active", v==="dash");
   document.getElementById("nav-meet").classList.toggle("active", v==="meet"||v==="detail");
   document.getElementById("nav-daily").classList.toggle("active", v==="daily");
-  document.getElementById("nav-projects").classList.toggle("active", v==="projects"||v==="project");
+  document.getElementById("nav-projects").classList.toggle("active", v==="projects"||v==="project"||v==="pquestions");
   document.getElementById("nav-stats").classList.toggle("active", v==="stats");
   if(v==="daily") await loadDailyTasks();
   if(v==="stats") await loadStats();
-  if(v==="projects"||v==="project") await loadProjects();
+  if(v==="projects"||v==="project"||v==="pquestions") await loadProjects();
   render();
   window.scrollTo(0,0);
 }
@@ -1049,6 +1066,7 @@ function render(){
   else if(view==="stats") app.innerHTML = renderStats();
   else if(view==="projects") app.innerHTML = renderProjectsList();
   else if(view==="project") app.innerHTML = renderProjectDetail();
+  else if(view==="pquestions") app.innerHTML = renderProjectQuestions();
   else app.innerHTML = renderDetail();
 }
 
@@ -1068,7 +1086,7 @@ function renderHub(){
    ١٠) المشاريع (أكشن بوينتس + أفكار)
    ============================================================ */
 async function loadProjects(){
-  const { data, error } = await sb.from("projects").select("*, project_items(*), project_teachers(*)").order("created_at", { ascending: false });
+  const { data, error } = await sb.from("projects").select("*, project_items(*), project_teachers(*), project_questions(*)").order("created_at", { ascending: false });
   if(error){ console.error(error); projects = []; return; }
   projects = (data || []).map(p => ({
     id: p.id, name: p.name, description: p.description, createdBy: p.created_by,
@@ -1079,7 +1097,10 @@ async function loadProjects(){
     teachers: (p.project_teachers || []).map(t => ({
       id: t.id, name: t.teacher_name, subject: t.subject,
       hasSessions: t.has_new_sessions, hasReel: t.has_reel, notes: t.notes
-    }))
+    })),
+    questions: (p.project_questions || [])
+      .sort((a,b)=> (a.position - b.position) || String(a.created_at).localeCompare(String(b.created_at)))
+      .map(q => ({ id: q.id, text: q.question, hint: q.hint, answer: q.answer, notes: q.notes }))
   }));
 }
 
@@ -1146,6 +1167,7 @@ function renderProjectDetail(){
   <div class="card">
     <h2>🚀 ${esc(p.name)}</h2>
     ${p.description? `<div class="sub" style="white-space:pre-wrap;line-height:1.8;margin-top:6px">${esc(p.description)}</div>` : ""}
+    ${canEdit? `<div style="margin-top:12px"><button class="btn gold small" onclick="go('pquestions','${p.id}')">📋 أسئلة للمدير (${p.questions.filter(q=>q.answer).length}/${p.questions.length})</button></div>` : ""}
   </div>
 
   <div class="stat-grid">
@@ -1211,6 +1233,120 @@ function renderProjectDetail(){
     <div id="proj-smart-out"></div>
   </div>`;
   return html;
+}
+
+/* ---------- 📋 أسئلة للمدير ---------- */
+function renderProjectQuestions(){
+  const p = projects.find(x=>x.id===openProjectId);
+  if(!p) return renderProjectsList();
+  if(!canEditProject(p)) return renderProjectDetail();
+  const qs = p.questions;
+  const yes = qs.filter(q=>q.answer==="yes").length;
+  const no = qs.filter(q=>q.answer==="no").length;
+  const open = qs.length - yes - no;
+
+  let html = `
+  <button class="back" onclick="go('project','${p.id}')">→ رجوع لمشروع ${esc(p.name)}</button>
+  <div class="card">
+    <h2>📋 أسئلة للمدير — ${esc(p.name)}</h2>
+    <div class="sub">اضغط «نعم» أو «لا» وقت الاجتماع، واكتب ملاحظة إذا لزم. الإجابات بتنحفظ لحالها. (خاصة فيك إنت بس)</div>
+    <div class="stat-grid" style="margin:12px 0 0">
+      <div class="stat-tile"><b>${yes}</b><span>✅ نعم</span></div>
+      <div class="stat-tile"><b>${no}</b><span>❌ لا</span></div>
+      <div class="stat-tile"><b>${open}</b><span>⏳ بدون جواب</span></div>
+      <div class="stat-tile"><b>${qs.length}</b><span>مجموع الأسئلة</span></div>
+    </div>
+    <div class="q-tools"><button class="btn ghost small" onclick="copyQuestionsSummary(this)">📋 نسخ الملخص</button></div>
+  </div>`;
+
+  if(qs.length===0) html += `<div class="card"><div class="empty">ما في أسئلة لسا — ضيف من تحت</div></div>`;
+  qs.forEach((q,i)=>{ html += questionCard(q, i+1); });
+
+  html += `
+  <div class="card">
+    <h2>سؤال جديد</h2>
+    <div style="display:flex;gap:8px"><input id="new-question-input" placeholder="اكتب السؤال..." style="flex:1" onkeydown="if(event.key==='Enter')addQuestion()"><button class="btn small" onclick="addQuestion()">إضافة</button></div>
+  </div>`;
+  return html;
+}
+
+function questionCard(q, n){
+  if(editingQuestionId === q.id){
+    return `
+    <div class="q-card">
+      <label>السؤال</label><textarea id="eq-text" style="min-height:80px">${esc(q.text)}</textarea>
+      <label style="margin-top:8px">توضيح صغير (اختياري) — مثلاً: نعم = ... · لا = ...</label><input id="eq-hint" value="${esc(q.hint||"")}">
+      <div class="q-tools"><button class="btn small" id="eq-save-btn" onclick="saveQuestionEdit('${q.id}')">حفظ</button><button class="btn ghost small" onclick="cancelQuestionEdit()">إلغاء</button></div>
+    </div>`;
+  }
+  return `
+  <div class="q-card ${q.answer||""}">
+    <div class="q-head"><span class="q-num">${n}</span><div style="flex:1"><div class="q-text">${esc(q.text)}</div>${q.hint? `<div class="q-hint">${esc(q.hint)}</div>` : ""}</div></div>
+    <div class="q-actions">
+      <button class="q-btn yes ${q.answer==="yes"?"on":""}" onclick="setQuestionAnswer('${q.id}','yes')">✅ نعم</button>
+      <button class="q-btn no ${q.answer==="no"?"on":""}" onclick="setQuestionAnswer('${q.id}','no')">❌ لا</button>
+    </div>
+    <input class="q-notes" placeholder="ملاحظة (اختياري)" value="${esc(q.notes||"")}" onchange="updateQuestionNotes('${q.id}', this.value)">
+    <div class="q-tools"><button class="btn ghost small" onclick="startQuestionEdit('${q.id}')">تعديل</button><button class="btn danger small" onclick="deleteQuestion(this,'${q.id}')">حذف</button></div>
+  </div>`;
+}
+
+async function setQuestionAnswer(id, value){
+  const p = projects.find(x=>x.id===openProjectId);
+  const q = p?.questions.find(x=>x.id===id);
+  if(!q) return;
+  const next = q.answer === value ? null : value;
+  const { data, error } = await sb.from("project_questions").update({ answer: next, answered_at: next ? new Date().toISOString() : null }).eq("id", id).select();
+  if(error || !data || data.length===0){ alert("ما انحفظ الجواب" + (error? ": " + error.message : "")); return; }
+  await loadProjects(); render();
+}
+async function updateQuestionNotes(id, notes){
+  const { error } = await sb.from("project_questions").update({ notes: notes.trim() }).eq("id", id);
+  if(error){ alert("ما انحفظت الملاحظة: " + error.message); return; }
+  await loadProjects();
+}
+async function addQuestion(){
+  const input = document.getElementById("new-question-input");
+  const text = input.value.trim();
+  if(!text){ flagInput("new-question-input"); return; }
+  const p = projects.find(x=>x.id===openProjectId);
+  const position = (p?.questions.length || 0) + 1;
+  input.disabled = true;
+  const { error } = await sb.from("project_questions").insert({ project_id: openProjectId, question: text, position });
+  input.disabled = false;
+  if(error){ alert("صار خطأ: " + error.message); return; }
+  await loadProjects(); render();
+}
+function startQuestionEdit(id){ editingQuestionId = id; render(); setTimeout(()=>document.getElementById("eq-text")?.focus(), 0); }
+function cancelQuestionEdit(){ editingQuestionId = null; render(); }
+async function saveQuestionEdit(id){
+  const text = document.getElementById("eq-text").value.trim();
+  if(!text){ flagInput("eq-text"); return; }
+  const btn = document.getElementById("eq-save-btn");
+  btn.disabled = true; btn.textContent = "عم أحفظ...";
+  const { data, error } = await sb.from("project_questions").update({ question: text, hint: document.getElementById("eq-hint").value.trim() || null }).eq("id", id).select();
+  if(error || !data || data.length===0){ alert("ما انحفظ التعديل" + (error? ": " + error.message : "")); btn.disabled=false; btn.textContent="حفظ"; return; }
+  editingQuestionId = null;
+  await loadProjects(); render();
+}
+async function deleteQuestion(btn, id){
+  if(btn.dataset.armed !== "1"){
+    btn.dataset.armed = "1"; btn.textContent = "متأكد؟";
+    setTimeout(()=>{ btn.dataset.armed = "0"; btn.textContent = "حذف"; }, 2500);
+    return;
+  }
+  await sb.from("project_questions").delete().eq("id", id);
+  await loadProjects(); render();
+}
+function copyQuestionsSummary(btn){
+  const p = projects.find(x=>x.id===openProjectId);
+  if(!p) return;
+  const label = a => a==="yes" ? "نعم" : a==="no" ? "لا" : "بدون جواب";
+  const lines = p.questions.map((q,i)=> `${i+1}. ${q.text}\n   ← ${label(q.answer)}${q.notes? " — " + q.notes : ""}`);
+  const text = `أسئلة للمدير — ${p.name}\n\n` + lines.join("\n\n");
+  navigator.clipboard.writeText(text)
+    .then(()=>{ btn.textContent = "✔️ تم النسخ"; setTimeout(()=>{ btn.textContent = "📋 نسخ الملخص"; }, 2000); })
+    .catch(()=>{ alert("ما قدرت أنسخ — جرب من متصفح تاني"); });
 }
 
 function canEditProject(p){
